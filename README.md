@@ -1,8 +1,10 @@
 # Motorvärmare
 
-Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.4.1, betatest.
+Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.5.0, betatest.
 
 Ersätter beta 0.1.0, som aldrig installerades. Den här versionen är **en** integration. Varje motorvärmaruttag läggs till som en underpost.
+
+**Nytt i 0.5.0:** kortet visar alla uttag automatiskt när `entity` utelämnas, så ett nytt uttag dyker upp i dashboarden utan ändringar. Kortet har en visuell redigerare och visar effekt från reläet. Se avsnitt 3.
 
 **Nytt i 0.4.1:** egen ikon för integrationen (mappen `brand/`, kräver HA 2026.3 eller senare). Ikonen bygger på symbolen `car-electric` från Material Design Icons (Apache 2.0).
 
@@ -46,17 +48,30 @@ Inga YAML-filer behövs.
 Kortet följer med integrationen. Du behöver inte kopiera något till `www`.
 
 1. **Inställningar → Instrumentpaneler → ⋮ → Resurser → Lägg till resurs**
-   - URL: `/motorvarmare/motorvarmare-card.js`
+   - URL: `/motorvarmare/motorvarmare-card.js?v=0.5.0`
    - Typ: JavaScript-modul
 2. Ladda om appen eller webbläsaren.
-3. Lägg till kortet **Motorvärmare** från kortväljaren, eller använd manuellt:
+3. Lägg till kortet **Motorvärmare** från kortväljaren. Välj uttag i kortets redigerare: **Alla uttag** eller ett visst uttag.
+
+**Alla uttag, rekommenderat.** Det här räcker att klistra in i en ny sektion:
+
+```yaml
+type: custom:motorvarmare-card
+```
+
+Kortet visar ett block per uttag, sorterat på namn. Ett uttag som läggs till senare i integrationen visas automatiskt.
+
+**Ett visst uttag** (valfri rubrik):
 
 ```yaml
 type: custom:motorvarmare-card
 entity: sensor.<uttag>_avresor
+title: Bil 1
 ```
 
-Den faktiska `entity` ser du på Shelly-enheten under **Avresor** (se avsnitt 4). Kortets väljare föreslår den automatiskt.
+Kortet visar status, uppvärmningstid, utetemperatur, effekt (från reläets enhet, t.ex. Shellyns Power), nästa start, avresor med lägg till/ändra/ta bort eller hoppa över, säkerhetsspärr med kvittering och forcerad start.
+
+Byt `?v=` i resursens URL vid uppdatering av integrationen, så att webbläsaren hämtar det nya kortet.
 
 ## 4. Entiteter per uttag
 
