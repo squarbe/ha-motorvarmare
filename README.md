@@ -1,8 +1,10 @@
 # Motorvärmare
 
-Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.2.1, betatest.
+Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.3.0, betatest.
 
 Ersätter beta 0.1.0, som aldrig installerades. Den här versionen är **en** integration. Varje motorvärmaruttag läggs till som en underpost.
+
+**Nytt i 0.3.0:** kalenderkopplingar. Avresor hämtas automatiskt från en kalender i Home Assistant, till exempel en Google-kalender, med inställbar restid före händelsens start och/eller slut. Kalenderavresor kan hoppas över i kortet. Se avsnitt 7.
 
 **Nytt i 0.2.1:** när ett relä är valt hamnar uttagets entiteter på reläets enhet, alltså Shellyn "Motorvärmare 1". Det blir då en enda enhet per uttag. Shelly-enheten behåller sitt namn och sitt område. Ett uttag utan relä får en egen enhet med uttagets namn.
 
@@ -85,9 +87,31 @@ I testläge skickas inga kommandon. Ett undantag: om du byter från live- till t
 - **Ändra en pågående avresa:** flyttas den så långt fram att starttiden hamnar i framtiden planeras den om och behovet upphör tills dess. Annars fortsätter behovet.
 - **Tid utan tidszon** i tjänsteanrop tolkas som lokal tid.
 
-## 7. Inte med i 0.2
+## 7. Kalenderkopplingar
 
-- Kalenderimport och hoppa över enskilda avresor (planerat till 0.3)
+Öppna integrationen och välj **Lägg till kalenderkoppling**. Lägg till en koppling per kalender. Fyll i:
+
+- **Namn:** t.ex. `Förskola`. Visas i kortet.
+- **Kalender:** vilken kalenderentitet som helst i HA, t.ex. en Google-kalender.
+- **Uttag:** ett eller flera uttag som ska värmas för kalenderns händelser.
+- **Avresa vid händelsens start** och **Restid före start:** avresetid = start − restid.
+- **Avresa vid händelsens slut** och **Restid före slut:** ger en extra avresa, t.ex. för hämtning. Avresetid = slut − restid.
+
+Exempel, förskola: start på, restid 15 min, slut på, restid 15 min. En händelse 08:00–16:00 ger avresorna 07:45 och 15:45.
+
+Regler:
+
+- Alla händelser med klockslag blir avresor. Heldagshändelser ignoreras.
+- Kalendern läses var 5:e minut och när kalenderentiteten ändras, två dygn framåt. Tjänsten `motorvarmare.refresh_calendars` läser om direkt.
+- En kalenderavresa ligger kvar till 60 min efter avresetiden, precis som en manuell.
+- Tas händelsen bort ur kalendern innan uppvärmningen har startat försvinner avresan. Har uppvärmningen startat fortsätter den.
+- Går kalendern inte att läsa, t.ex. direkt efter omstart, behålls de avresor som redan finns.
+- En kalenderavresa ändras i kalendern, inte i kortet. I kortet kan den **hoppas över** och **återställas**. En överhoppad avresa ger inget värmebehov. Hoppar du över en pågående avresa upphör behovet.
+- Ändras händelsens tid eller titel räknas den som en ny avresa. En tidigare överhoppning gäller då inte längre.
+- Sensorn Avresor räknar inte överhoppade avresor.
+
+## 8. Inte med i 0.3
+
 - Historik över borttagna avresor
 
 ## Tester

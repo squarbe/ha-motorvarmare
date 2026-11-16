@@ -599,3 +599,252 @@ async def test_removing_linked_heater_keeps_shelly_device(hass, make):
     assert dr.async_get(hass).async_get(dev.id) is not None
     assert not _our_entities(hass, env.entry)
     assert hass.states.get(RELAY) is not None
+
+
+# ---------------- kalenderkopplingar (0.3) ----------------
+
+CAL = "calendar.forskola"
+CSID = "kal1"
+
+
+def cal_sub(sid=CSID, title="Förskola", heaters=(SID,), **extra):
+    data = {"calendar_entity": CAL, "heaters": list(heaters), "use_start": True,
+            "travel_before_start": 15, "use_end": True, "travel_before_end": 15, **extra}
+    return {"data": data, "subentry_id": sid, "subentry_type": "kalender", "title": title, "unique_id": None}
+
+
+class FakeCalendar:
+    def __init__(self, hass):
+        from homeassistant.core import SupportsResponse
+        self.events = []
+        self.fail = False
+        self.calls = 0
+        hass.states.async_set(CAL, "off")
+
+        async def handler(call):
+            self.calls += 1
+            if self.fail:
+                raise HomeAssistantError("kalendern svarar inte")
+            return {CAL: {"events": list(self.events)}}
+
+        hass.services.async_register("calendar", "get_events", handler, supports_response=SupportsResponse.ONLY)
+
+    def add(self, start, end, summary="Lämning"):
+        fmt = lambda v: v if isinstance(v, str) else dt_util.as_local(v).isoformat()
+        self.events.append({"start": fmt(start), "end": fmt(end), "summary": summary})
+
+
+@pytest.fixture
+def cal(hass):
+    return FakeCalendar(hass)
+
+
+def trips(env, eid="sensor.motorvarmare_1_avresor"):
+    return env.s(eid).attributes["trips"]
+
+
+async def refresh(env):
+    await env.hass.services.async_call(DOMAIN, "refresh_calendars", {}, blocking=True)
+    await env.hass.async_block_till_done()
+
+
+async def test_calendar_start_and_end_with_travel_time(hass, make, cal):
+    now = dt_util.now().replace(second=0, microsecond=0)
+    start, end = now + timedelta(hours=5), now + timedelta(hours=13)
+    cal.add(start, end, "Förskola")
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), cal_sub()])
+    rows = trips(env)
+    assert [dt_util.parse_datetime(r["departure_at"]) for r in rows] == [
+        start - timedelta(minutes=15), end - timedelta(minutes=15)]
+    assert [r["label"] for r in rows] == ["Förskola", "Förskola (slut)"]
+    assert all(r["source"] == "calendar" and r["calendar"] == "Förskola" for r in rows)
+    assert env.s("sensor.motorvarmare_1_avresor").state == "2"
+    # samma läsning igen ger inga dubbletter
+    await refresh(env)
+    assert len(trips(env)) == 2
+
+
+async def test_calendar_only_start_and_all_day_ignored(hass, make, cal):
+    now = dt_util.now()
+    cal.add(now + timedelta(hours=3), now + timedelta(hours=4))
+    day = (now + timedelta(days=1)).date()
+    cal.add(day.isoformat(), (day + timedelta(days=1)).isoformat(), "Heldag")
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), cal_sub(use_end=False, travel_before_start=0)])
+    rows = trips(env)
+    assert len(rows) == 1 and rows[0]["label"] == "Lämning"
+
+
+async def test_calendar_need_and_purge_after_60(hass, make, cal, freezer):
+    now = dt_util.now()
+    cal.add(now + timedelta(minutes=45), now + timedelta(hours=6))  # avresa om 30 min, 0 °C -> 60 min
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY), cal_sub()])
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+    assert len(env.on) == 1
+    await env.relay("on")
+    await env.tick(freezer, timedelta(minutes=30 + 59))
+    assert len(trips(env)) == 2  # ligger kvar till avresa + 60
+    await env.tick(freezer, timedelta(minutes=1, seconds=30))
+    assert len(trips(env)) == 1
+    # En senare läsning lägger inte tillbaka den passerade avresan
+    await refresh(env)
+    assert len(trips(env)) == 1
+
+
+async def test_calendar_event_removed_before_start_drops_trip(hass, make, cal):
+    now = dt_util.now()
+    cal.add(now + timedelta(hours=5), now + timedelta(hours=6))
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), cal_sub(use_end=False)])
+    assert len(trips(env)) == 1
+    cal.events.clear()
+    await refresh(env)
+    assert trips(env) == []
+
+
+async def test_calendar_event_removed_after_start_keeps_heating(hass, make, cal):
+    now = dt_util.now()
+    cal.add(now + timedelta(minutes=30), now + timedelta(hours=6))
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), cal_sub(use_end=False)])
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+    cal.events.clear()
+    await refresh(env)
+    assert len(trips(env)) == 1
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+
+
+async def test_calendar_read_failure_keeps_trips(hass, make, cal):
+    now = dt_util.now()
+    cal.add(now + timedelta(hours=5), now + timedelta(hours=6))
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), cal_sub(use_end=False)])
+    cal.fail = True
+    await refresh(env)
+    assert len(trips(env)) == 1
+
+
+async def test_calendar_state_change_triggers_read(hass, make, cal):
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), cal_sub(use_end=False)])
+    assert trips(env) == []
+    now = dt_util.now()
+    cal.add(now + timedelta(hours=5), now + timedelta(hours=6))
+    hass.states.async_set(CAL, "on")
+    await hass.async_block_till_done()
+    assert len(trips(env)) == 1
+
+
+async def test_calendar_periodic_read(hass, make, cal, freezer):
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), cal_sub(use_end=False)])
+    now = dt_util.now()
+    cal.add(now + timedelta(hours=5), now + timedelta(hours=6))
+    await env.tick(freezer, timedelta(minutes=5, seconds=5))
+    assert len(trips(env)) == 1
+
+
+async def test_skip_calendar_trip_no_need_and_survives_read(hass, make, cal):
+    now = dt_util.now()
+    cal.add(now + timedelta(minutes=30), now + timedelta(hours=6))
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY), cal_sub(use_end=False)])
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+    await env.relay("on")
+    tid = trips(env)[0]["id"]
+    await env.call("skip_departure", trip_id=tid)
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "off"
+    assert len(env.off) == 1
+    assert trips(env)[0]["skipped"] is True
+    assert env.s("sensor.motorvarmare_1_avresor").state == "0"
+    await refresh(env)
+    assert trips(env)[0]["skipped"] is True
+    await env.call("unskip_departure", trip_id=tid)
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+
+
+async def test_skipped_trip_not_next_start(hass, make, cal):
+    now = dt_util.now()
+    cal.add(now + timedelta(hours=5), now + timedelta(hours=6))
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), cal_sub(use_end=False)])
+    assert env.s("sensor.motorvarmare_1_nasta_start").state not in ("unknown", None)
+    await env.call("skip_departure", trip_id=trips(env)[0]["id"])
+    assert env.s("sensor.motorvarmare_1_nasta_start").state == "unknown"
+
+
+async def test_calendar_trip_edit_rejected_remove_skips(hass, make, cal):
+    now = dt_util.now()
+    cal.add(now + timedelta(hours=5), now + timedelta(hours=6))
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), cal_sub(use_end=False)])
+    tid = trips(env)[0]["id"]
+    with pytest.raises(HomeAssistantError):
+        await env.call("edit_departure", trip_id=tid, departure_at=(now + timedelta(hours=7)).isoformat())
+    await env.call("remove_departure", trip_id=tid)
+    assert trips(env)[0]["skipped"] is True
+
+
+async def test_manual_and_calendar_trips_coexist(hass, make, cal):
+    now = dt_util.now()
+    cal.add(now + timedelta(hours=5), now + timedelta(hours=6))
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), cal_sub(use_end=False)])
+    await env.call("add_departure", departure_at=(now + timedelta(hours=2)).isoformat())
+    await env.call("add_departure", departure_at=(now + timedelta(hours=3)).isoformat())
+    await refresh(env)
+    rows = trips(env)
+    assert [r["source"] for r in rows] == ["manual", "manual", "calendar"]
+
+
+async def test_calendar_to_two_heaters(hass, make, cal):
+    now = dt_util.now()
+    cal.add(now + timedelta(hours=5), now + timedelta(hours=6))
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), sub(SID2, "Motorvärmare 2", RELAY2, live=False),
+                           cal_sub(heaters=(SID, SID2), use_end=False)])
+    assert len(trips(env)) == 1
+    assert len(trips(env, "sensor.motorvarmare_2_avresor")) == 1
+    # Överhoppning gäller bara det uttag där den görs
+    await env.call("skip_departure", trip_id=trips(env)[0]["id"])
+    assert trips(env, "sensor.motorvarmare_2_avresor")[0]["skipped"] is False
+
+
+async def test_calendar_subentry_flow_and_validation(hass, make, cal):
+    env = await make()
+    entry = env.entry
+    r = await hass.config_entries.subentries.async_init((entry.entry_id, "kalender"), context={"source": "user"})
+    assert r["type"] is FlowResultType.FORM
+    base = {"name": "Förskola", "calendar_entity": CAL, "heaters": [SID], "use_start": True,
+            "travel_before_start": 15, "use_end": True, "travel_before_end": 15}
+    r = await hass.config_entries.subentries.async_configure(r["flow_id"], {**base, "heaters": []})
+    assert r["errors"] == {"heaters": "no_heater"}
+    r = await hass.config_entries.subentries.async_configure(r["flow_id"], {**base, "use_start": False, "use_end": False})
+    assert r["errors"] == {"use_start": "no_departure_point"}
+    now = dt_util.now()
+    cal.add(now + timedelta(hours=5), now + timedelta(hours=6))
+    r = await hass.config_entries.subentries.async_configure(r["flow_id"], base)
+    assert r["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert len(trips(env)) == 2
+    # Nytt uttag räknar bara uttag i förslaget till namn
+    r = await hass.config_entries.subentries.async_init((entry.entry_id, "uttag"), context={"source": "user"})
+    assert r["data_schema"]({"temperature_entity": TEMP})["name"] == "Motorvärmare 2"
+
+
+async def test_calendar_flow_aborts_without_heaters(hass, make, cal):
+    env = await make(subs=[])
+    r = await hass.config_entries.subentries.async_init((env.entry.entry_id, "kalender"), context={"source": "user"})
+    assert r["type"] is FlowResultType.ABORT and r["reason"] == "no_heaters"
+
+
+async def test_removing_calendar_link_drops_unstarted_trips(hass, make, cal):
+    now = dt_util.now()
+    cal.add(now + timedelta(hours=5), now + timedelta(hours=6))
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), cal_sub(use_end=False)])
+    await env.call("add_departure", departure_at=(now + timedelta(hours=2)).isoformat())
+    assert len(trips(env)) == 2
+    hass.config_entries.async_remove_subentry(env.entry, CSID)
+    await hass.async_block_till_done()
+    rows = trips(env)
+    assert [r["source"] for r in rows] == ["manual"]
+
+
+async def test_calendar_trips_persist_over_restart(hass, make, cal, hass_storage):
+    now = dt_util.now()
+    cal.add(now + timedelta(hours=5), now + timedelta(hours=6))
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), cal_sub(use_end=False)])
+    await env.call("skip_departure", trip_id=trips(env)[0]["id"])
+    cal.fail = True  # kalendern inte redo efter omstart
+    assert await hass.config_entries.async_reload(env.entry.entry_id)
+    await hass.async_block_till_done()
+    assert trips(env)[0]["skipped"] is True

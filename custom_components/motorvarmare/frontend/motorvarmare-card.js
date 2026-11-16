@@ -1,5 +1,5 @@
-/* Motorvärmare – Lovelace-kort (version 0.2). Inga externa beroenden. */
-const MV_VERSION = "0.2.1";
+/* Motorvärmare – Lovelace-kort (version 0.3). Inga externa beroenden. */
+const MV_VERSION = "0.3.0";
 
 class MotorvarmareCard extends HTMLElement {
   setConfig(config) {
@@ -147,14 +147,25 @@ class MotorvarmareCard extends HTMLElement {
           }, true),
           this.button("Avbryt", () => { this._editing = null; this._key = null; this.render(); })));
       } else {
-        const info = this.el("div", {},
-          this.el("div", { textContent: this.fmt(t.departure_at) + (t.label ? ` – ${t.label}` : ""), style: "font-weight:500" }),
+        const isCal = t.source === "calendar";
+        const sub = t.skipped
+          ? "Överhoppad – ingen uppvärmning"
+          : t.started ? `Värmebehov pågår till ${this.fmt(t.end_at, false)}` : `Planerad start ${this.fmt(t.start_at, false)}`;
+        const info = this.el("div", { style: t.skipped ? "opacity:.55" : "" },
+          this.el("div", {
+            textContent: this.fmt(t.departure_at) + (t.label ? ` – ${t.label}` : ""),
+            style: "font-weight:500" + (t.skipped ? ";text-decoration:line-through" : ""),
+          }),
           this.el("div", {
             style: "font-size:13px;opacity:.75",
-            textContent: t.started ? `Värmebehov pågår till ${this.fmt(t.end_at, false)}` : `Planerad start ${this.fmt(t.start_at, false)}`,
+            textContent: (isCal ? `Kalender: ${t.calendar || "okänd"} · ` : "") + sub,
           }));
         const actions = this.el("div", { style: "display:flex;gap:6px;flex-wrap:wrap" });
-        if (this._confirmDelete === t.id) {
+        if (isCal) {
+          actions.append(t.skipped
+            ? this.button("Återställ", () => this.call("unskip_departure", { trip_id: t.id }))
+            : this.button("Hoppa över", () => this.call("skip_departure", { trip_id: t.id })));
+        } else if (this._confirmDelete === t.id) {
           actions.append(
             this.button("Ja, ta bort", () => { this._confirmDelete = null; this.call("remove_departure", { trip_id: t.id }); }, true),
             this.button("Avbryt", () => { this._confirmDelete = null; this._key = null; this.render(); }));

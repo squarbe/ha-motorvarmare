@@ -14,15 +14,21 @@
     "step": {
       "init": {
         "title": "Larm",
-        "data": { "notify_service": "Skicka larm till" },
-        "data_description": { "notify_service": "Mobil enhet (notify-tjänst) som får larm vid säkerhetsspärr. Larm visas alltid även som avisering i Home Assistant." }
+        "data": {
+          "notify_service": "Skicka larm till"
+        },
+        "data_description": {
+          "notify_service": "Mobil enhet (notify-tjänst) som får larm vid säkerhetsspärr. Larm visas alltid även som avisering i Home Assistant."
+        }
       }
     }
   },
   "config_subentries": {
     "uttag": {
       "entry_type": "Motorvärmaruttag",
-      "initiate_flow": { "user": "Lägg till motorvärmaruttag" },
+      "initiate_flow": {
+        "user": "Lägg till motorvärmaruttag"
+      },
       "step": {
         "user": {
           "title": "Nytt motorvärmaruttag",
@@ -75,7 +81,64 @@
         "relay_in_use": "Reläet används redan av ett annat uttag.",
         "auto_off_too_short": "Auto Off måste vara minst 15 minuter."
       },
-      "abort": { "reconfigure_successful": "Uttaget är uppdaterat." }
+      "abort": {
+        "reconfigure_successful": "Uttaget är uppdaterat."
+      }
+    },
+    "kalender": {
+      "entry_type": "Calendar link",
+      "initiate_flow": {
+        "user": "Add calendar link"
+      },
+      "step": {
+        "user": {
+          "title": "New calendar link",
+          "data": {
+            "name": "Name",
+            "calendar_entity": "Calendar",
+            "heaters": "Outlets",
+            "use_start": "Departure at event start",
+            "travel_before_start": "Travel time before start",
+            "use_end": "Departure at event end",
+            "travel_before_end": "Travel time before end"
+          },
+          "data_description": {
+            "calendar_entity": "Every timed event becomes a departure. All-day events are ignored.",
+            "heaters": "Outlets to heat for the events in this calendar.",
+            "travel_before_start": "Departure = event start minus travel time.",
+            "use_end": "Adds an extra departure, e.g. for pick-up.",
+            "travel_before_end": "Departure = event end minus travel time."
+          }
+        },
+        "reconfigure": {
+          "title": "Edit calendar link",
+          "data": {
+            "name": "Name",
+            "calendar_entity": "Calendar",
+            "heaters": "Outlets",
+            "use_start": "Departure at event start",
+            "travel_before_start": "Travel time before start",
+            "use_end": "Departure at event end",
+            "travel_before_end": "Travel time before end"
+          },
+          "data_description": {
+            "calendar_entity": "Every timed event becomes a departure. All-day events are ignored.",
+            "heaters": "Outlets to heat for the events in this calendar.",
+            "travel_before_start": "Departure = event start minus travel time.",
+            "use_end": "Adds an extra departure, e.g. for pick-up.",
+            "travel_before_end": "Departure = event end minus travel time."
+          }
+        }
+      },
+      "error": {
+        "no_heater": "Select at least one outlet.",
+        "no_departure_point": "Select start, end or both.",
+        "name_required": "Enter a name."
+      },
+      "abort": {
+        "no_heaters": "Add an engine heater outlet first.",
+        "reconfigure_successful": "The calendar link has been updated."
+      }
     }
   },
   "services": {
@@ -83,46 +146,121 @@
       "name": "Lägg till avresa",
       "description": "Registrerar en manuell avresa för ett uttag.",
       "fields": {
-        "heater_id": { "name": "Uttag (id)", "description": "Uttagets id, finns som attribut heater_id på sensorn Avresor." },
-        "departure_at": { "name": "Avresetid", "description": "Tid utan tidszon tolkas som lokal tid." },
-        "label": { "name": "Etikett", "description": "Valfri text." }
+        "heater_id": {
+          "name": "Uttag (id)",
+          "description": "Uttagets id, finns som attribut heater_id på sensorn Avresor."
+        },
+        "departure_at": {
+          "name": "Avresetid",
+          "description": "Tid utan tidszon tolkas som lokal tid."
+        },
+        "label": {
+          "name": "Etikett",
+          "description": "Valfri text."
+        }
       }
     },
     "edit_departure": {
       "name": "Ändra avresa",
       "description": "Ändrar tid eller etikett för en avresa.",
       "fields": {
-        "heater_id": { "name": "Uttag (id)", "description": "Uttagets id." },
-        "trip_id": { "name": "Avrese-id", "description": "Avresans id." },
-        "departure_at": { "name": "Ny avresetid", "description": "Tid utan tidszon tolkas som lokal tid." },
-        "label": { "name": "Etikett", "description": "Valfri text." }
+        "heater_id": {
+          "name": "Uttag (id)",
+          "description": "Uttagets id."
+        },
+        "trip_id": {
+          "name": "Avrese-id",
+          "description": "Avresans id."
+        },
+        "departure_at": {
+          "name": "Ny avresetid",
+          "description": "Tid utan tidszon tolkas som lokal tid."
+        },
+        "label": {
+          "name": "Etikett",
+          "description": "Valfri text."
+        }
       }
     },
     "remove_departure": {
       "name": "Ta bort avresa",
       "description": "Tar bort en avresa.",
       "fields": {
-        "heater_id": { "name": "Uttag (id)", "description": "Uttagets id." },
-        "trip_id": { "name": "Avrese-id", "description": "Avresans id." }
+        "heater_id": {
+          "name": "Uttag (id)",
+          "description": "Uttagets id."
+        },
+        "trip_id": {
+          "name": "Avrese-id",
+          "description": "Avresans id."
+        }
       }
     },
     "force_start": {
       "name": "Forcerad start",
       "description": "Värmer i angivet antal minuter (max 240).",
       "fields": {
-        "heater_id": { "name": "Uttag (id)", "description": "Uttagets id." },
-        "minutes": { "name": "Minuter", "description": "15–240 minuter." }
+        "heater_id": {
+          "name": "Uttag (id)",
+          "description": "Uttagets id."
+        },
+        "minutes": {
+          "name": "Minuter",
+          "description": "15–240 minuter."
+        }
       }
     },
     "stop_force": {
       "name": "Stoppa forcering",
       "description": "Avbryter en forcerad start.",
-      "fields": { "heater_id": { "name": "Uttag (id)", "description": "Uttagets id." } }
+      "fields": {
+        "heater_id": {
+          "name": "Uttag (id)",
+          "description": "Uttagets id."
+        }
+      }
     },
     "acknowledge_fault": {
       "name": "Kvittera säkerhetsspärr",
       "description": "Kvitterar spärren. Startar inte reläet; det sker vid nästa behovsperiod eller vid forcerad start.",
-      "fields": { "heater_id": { "name": "Uttag (id)", "description": "Uttagets id." } }
+      "fields": {
+        "heater_id": {
+          "name": "Uttag (id)",
+          "description": "Uttagets id."
+        }
+      }
+    },
+    "skip_departure": {
+      "name": "Skip departure",
+      "description": "Skips a departure (e.g. from the calendar) without removing it.",
+      "fields": {
+        "heater_id": {
+          "name": "Outlet (id)",
+          "description": "Outlet id."
+        },
+        "trip_id": {
+          "name": "Departure id",
+          "description": "Departure id."
+        }
+      }
+    },
+    "unskip_departure": {
+      "name": "Restore departure",
+      "description": "Makes a skipped departure active again.",
+      "fields": {
+        "heater_id": {
+          "name": "Outlet (id)",
+          "description": "Outlet id."
+        },
+        "trip_id": {
+          "name": "Departure id",
+          "description": "Departure id."
+        }
+      }
+    },
+    "refresh_calendars": {
+      "name": "Refresh calendars",
+      "description": "Re-reads all linked calendars now."
     }
   }
 }

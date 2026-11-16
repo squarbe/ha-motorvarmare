@@ -63,3 +63,24 @@ acknowledge_fault:
       required: true
       selector:
         text:
+skip_departure:
+  fields:
+    heater_id:
+      required: true
+      selector:
+        text:
+    trip_id:
+      required: true
+      selector:
+        text:
+unskip_departure:
+  fields:
+    heater_id:
+      required: true
+      selector:
+        text:
+    trip_id:
+      required: true
+      selector:
+        text:
+refresh_calendars:

@@ -4,6 +4,7 @@ from datetime import timedelta
 DOMAIN = "motorvarmare"
 PLATFORMS = ["binary_sensor", "button", "sensor"]
 SUBENTRY_TYPE = "uttag"
+CALENDAR_SUBENTRY_TYPE = "kalender"
 
 STORAGE_KEY = "motorvarmare.state"
 STORAGE_VERSION = 1
@@ -31,6 +32,21 @@ DEFAULTS = {
     CONF_CACHE: 30,
 }
 
+# Konfiguration per kalenderkoppling (subentry data)
+CONF_CALENDAR = "calendar_entity"
+CONF_HEATERS = "heaters"
+CONF_USE_START = "use_start"
+CONF_TRAVEL_START = "travel_before_start"
+CONF_USE_END = "use_end"
+CONF_TRAVEL_END = "travel_before_end"
+
+CALENDAR_DEFAULTS = {
+    CONF_USE_START: True,
+    CONF_TRAVEL_START: 0,
+    CONF_USE_END: False,
+    CONF_TRAVEL_END: 0,
+}
+
 # Konfiguration för hela integrationen (entry options)
 CONF_NOTIFY = "notify_service"
 
@@ -42,3 +58,6 @@ AUTO_OFF_MARGIN = timedelta(minutes=5)  # integrationen slår själv av så här
 TICK = timedelta(seconds=15)
 TEMP_VALID = (-60.0, 60.0)
 FORCE_CHOICES = (15, 30, 60, 120, 240)
+CALENDAR_REFRESH = timedelta(minutes=5)  # kalendern läses om så här ofta (och vid ändring)
+CALENDAR_LOOKBACK = timedelta(hours=2)
+CALENDAR_LOOKAHEAD = timedelta(days=2)

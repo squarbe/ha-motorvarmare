@@ -248,22 +248,29 @@ class Heater:
             dep = _dt(trip["departure_at"])
             assert dep is not None
             start = dep - timedelta(minutes=self.heating_minutes)
+            skipped = bool(trip.get("skipped"))
             rows.append(
                 {
                     "id": trip["id"],
                     "departure_at": dep.isoformat(),
                     "label": trip.get("label", ""),
+                    "source": "calendar" if trip.get("source") else "manual",
+                    "calendar": trip.get("calendar", ""),
+                    "skipped": skipped,
                     "started": bool(trip.get("started")),
                     "start_at": start.isoformat(),
                     "end_at": (dep + AFTER_DEPARTURE).isoformat(),
-                    "active": bool(trip.get("started")) and now < dep + AFTER_DEPARTURE,
+                    "active": bool(trip.get("started")) and not skipped and now < dep + AFTER_DEPARTURE,
                 }
             )
         return sorted(rows, key=lambda r: r["departure_at"])
 
+    def active_trip_count(self) -> int:
+        return sum(1 for t in self.state["trips"] if not t.get("skipped"))
+
     def next_start(self) -> datetime | None:
         starts = [
-            _dt(t["start_at"]) for t in self.trip_view() if not t["started"]
+            _dt(t["start_at"]) for t in self.trip_view() if not t["started"] and not t["skipped"]
         ]
         return min((s for s in starts if s), default=None)
 
@@ -288,6 +295,10 @@ class Heater:
         self, trip_id: str, when: datetime | None, label: str | None
     ) -> None:
         trip = self._trip(trip_id)
+        if trip.get("source"):
+            raise HomeAssistantError(
+                "Avresan kommer från kalendern. Ändra händelsen i kalendern eller hoppa över avresan."
+            )
         if when is not None:
             now = dt_util.utcnow()
             if when + AFTER_DEPARTURE <= now:
@@ -303,10 +314,83 @@ class Heater:
         await self.async_reconcile()
 
     async def async_remove_departure(self, trip_id: str) -> None:
-        self._trip(trip_id)
+        trip = self._trip(trip_id)
+        if trip.get("source"):
+            # En kalenderavresa skulle bara komma tillbaka vid nästa läsning: hoppa över den i stället.
+            await self.async_skip_departure(trip_id, True)
+            return
         self.state["trips"] = [t for t in self.state["trips"] if t["id"] != trip_id]
         self._save()
         await self.async_reconcile()
+
+    async def async_skip_departure(self, trip_id: str, skip: bool) -> None:
+        """Hoppa över (eller återställ) en avresa utan att ta bort den.
+
+        En överhoppad avresa ger inget värmebehov. Hoppas en pågående avresa över
+        upphör behovet, precis som när en manuell avresa tas bort.
+        """
+        trip = self._trip(trip_id)
+        trip["skipped"] = bool(skip)
+        self._save()
+        await self.async_reconcile()
+
+    async def async_sync_calendar(
+        self, source_id: str, calendar_name: str, departures: list[dict[str, Any]]
+    ) -> None:
+        """Ersätt avresorna från en kalenderkoppling med aktuellt läsresultat.
+
+        departures: [{"id", "departure_at" (datetime, UTC), "label"}]
+        - Nya avresor läggs till (om avresa + 60 min inte har passerat).
+        - Avresor som inte längre finns i kalendern tas bort, utom när
+          uppvärmningen redan har startat: de ligger kvar till avresa + 60 min.
+        - Överhoppning och startstatus behålls för avresor som finns kvar.
+        """
+        now = dt_util.utcnow()
+        wanted = {d["id"]: d for d in departures if d["departure_at"] + AFTER_DEPARTURE > now}
+        changed = False
+        kept: list[dict[str, Any]] = []
+        for trip in self.state["trips"]:
+            if trip.get("source") != source_id:
+                kept.append(trip)
+                continue
+            if trip["id"] in wanted:
+                new = wanted.pop(trip["id"])
+                if trip.get("label") != new["label"] or trip.get("calendar") != calendar_name:
+                    trip["label"] = new["label"]
+                    trip["calendar"] = calendar_name
+                    changed = True
+                kept.append(trip)
+            elif trip.get("started") and not trip.get("skipped"):
+                kept.append(trip)  # pågående uppvärmning avbryts inte av en ändrad kalender
+            else:
+                changed = True
+        for dep in wanted.values():
+            kept.append(
+                {
+                    "id": dep["id"],
+                    "departure_at": dep["departure_at"].isoformat(),
+                    "started": False,
+                    "label": dep["label"],
+                    "source": source_id,
+                    "calendar": calendar_name,
+                    "skipped": False,
+                }
+            )
+            changed = True
+        if changed:
+            self.state["trips"] = kept
+            self._save()
+            await self.async_reconcile()
+
+    async def async_drop_calendar_sources(self, valid: set[str]) -> None:
+        """Ta bort ej startade avresor från kalenderkopplingar som inte längre gäller."""
+        before = len(self.state["trips"])
+        self.state["trips"] = [
+            t for t in self.state["trips"]
+            if not t.get("source") or t["source"] in valid or (t.get("started") and not t.get("skipped"))
+        ]
+        if len(self.state["trips"]) != before:
+            self._save()
 
     async def async_force(self, minutes: int) -> None:
         if self.fault:
@@ -363,6 +447,9 @@ class Heater:
             dep = _dt(trip["departure_at"])
             if dep is None or now >= dep + AFTER_DEPARTURE:
                 changed = True
+                continue
+            if trip.get("skipped"):
+                remaining.append(trip)
                 continue
             if not trip.get("started") and now >= dep - timedelta(minutes=self.heating_minutes):
                 trip["started"] = True  # låses: temperaturökning avbryter inte

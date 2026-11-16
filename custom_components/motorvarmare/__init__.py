@@ -19,7 +19,10 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
+from .calendar_sync import CalendarSource
 from .const import (
+    CALENDAR_SUBENTRY_TYPE,
+    CONF_HEATERS,
     CONF_NOTIFY,
     DOMAIN,
     PLATFORMS,
@@ -40,6 +43,7 @@ class RuntimeData:
     store: Store
     data: dict[str, Any]
     heaters: dict[str, Heater] = field(default_factory=dict)
+    calendars: dict[str, CalendarSource] = field(default_factory=dict)
 
 
 type MotorvarmareConfigEntry = ConfigEntry[RuntimeData]
@@ -121,8 +125,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: MotorvarmareConfigEntry)
         if is_linked:
             linked.add(heater.heater_id)
 
+    # Kalenderkopplingar
+    for sid, sub in entry.subentries.items():
+        if sub.subentry_type == CALENDAR_SUBENTRY_TYPE:
+            runtime.calendars[sid] = CalendarSource(hass, sid, sub.title, dict(sub.data), runtime.heaters)
+    for heater in runtime.heaters.values():
+        valid = {
+            cid for cid, cal in runtime.calendars.items()
+            if heater.heater_id in cal.config.get(CONF_HEATERS, [])
+        }
+        await heater.async_drop_calendar_sources(valid)
+
     for heater in runtime.heaters.values():
         await heater.async_start()
+    for source in runtime.calendars.values():
+        await source.async_start()
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -164,6 +181,8 @@ async def _async_update_listener(hass: HomeAssistant, entry: MotorvarmareConfigE
 async def async_unload_entry(hass: HomeAssistant, entry: MotorvarmareConfigEntry) -> bool:
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
+        for source in entry.runtime_data.calendars.values():
+            source.async_stop()
         for heater in entry.runtime_data.heaters.values():
             heater.async_stop()
         await entry.runtime_data.store.async_save(entry.runtime_data.data)
@@ -201,6 +220,18 @@ def _register_services(hass: HomeAssistant) -> None:
 
     async def remove(call: ServiceCall) -> None:
         await _heater(hass, call).async_remove_departure(call.data["trip_id"])
+
+    async def skip(call: ServiceCall) -> None:
+        await _heater(hass, call).async_skip_departure(call.data["trip_id"], True)
+
+    async def unskip(call: ServiceCall) -> None:
+        await _heater(hass, call).async_skip_departure(call.data["trip_id"], False)
+
+    async def refresh(call: ServiceCall) -> None:
+        for entry in hass.config_entries.async_entries(DOMAIN):
+            if entry.state is ConfigEntryState.LOADED:
+                for source in entry.runtime_data.calendars.values():
+                    await source.async_refresh()
 
     async def force(call: ServiceCall) -> None:
         await _heater(hass, call).async_force(call.data["minutes"])
@@ -241,6 +272,11 @@ def _register_services(hass: HomeAssistant) -> None:
         remove,
         schema=vol.Schema({**base, vol.Required("trip_id"): cv.string}),
     )
+    for name, handler in (("skip_departure", skip), ("unskip_departure", unskip)):
+        hass.services.async_register(
+            DOMAIN, name, handler, schema=vol.Schema({**base, vol.Required("trip_id"): cv.string})
+        )
+    hass.services.async_register(DOMAIN, "refresh_calendars", refresh, schema=vol.Schema({}))
     hass.services.async_register(
         DOMAIN,
         "force_start",

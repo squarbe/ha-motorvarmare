@@ -59,7 +59,7 @@ class DeparturesSensor(HeaterEntity, SensorEntity):
 
     @property
     def native_value(self):
-        return len(self.heater.state["trips"])
+        return self.heater.active_trip_count()
 
     @property
     def extra_state_attributes(self):

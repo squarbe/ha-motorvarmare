@@ -17,7 +17,15 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
+    CALENDAR_DEFAULTS,
+    CALENDAR_SUBENTRY_TYPE,
     CONF_AUTO_OFF,
+    CONF_CALENDAR,
+    CONF_HEATERS,
+    CONF_TRAVEL_END,
+    CONF_TRAVEL_START,
+    CONF_USE_END,
+    CONF_USE_START,
     CONF_BASE,
     CONF_CACHE,
     CONF_FALLBACK,
@@ -90,7 +98,7 @@ class MotorvarmareConfigFlow(ConfigFlow, domain=DOMAIN):
     @classmethod
     @callback
     def async_get_supported_subentry_types(cls, config_entry: ConfigEntry) -> dict[str, type[ConfigSubentryFlow]]:
-        return {SUBENTRY_TYPE: HeaterSubentryFlow}
+        return {SUBENTRY_TYPE: HeaterSubentryFlow, CALENDAR_SUBENTRY_TYPE: CalendarSubentryFlow}
 
     @staticmethod
     @callback
@@ -149,7 +157,8 @@ class HeaterSubentryFlow(ConfigSubentryFlow):
             if not errors:
                 name = data.pop("name")
                 return self.async_create_entry(title=name, data=data)
-        defaults = user_input or {"name": f"Motorvärmare {len(self._get_entry().subentries) + 1}"}
+        count = sum(1 for sub in self._get_entry().subentries.values() if sub.subentry_type == SUBENTRY_TYPE)
+        defaults = user_input or {"name": f"Motorvärmare {count + 1}"}
         return self.async_show_form(step_id="user", data_schema=_heater_schema(defaults), errors=errors)
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
@@ -163,3 +172,79 @@ class HeaterSubentryFlow(ConfigSubentryFlow):
                 return self.async_update_and_abort(self._get_entry(), subentry, title=name, data=data)
         defaults = user_input or {"name": subentry.title, **subentry.data}
         return self.async_show_form(step_id="reconfigure", data_schema=_heater_schema(defaults), errors=errors)
+
+
+def _calendar_schema(defaults: dict[str, Any], heater_options: list[selector.SelectOptionDict]) -> vol.Schema:
+    d = {**CALENDAR_DEFAULTS, **defaults}
+    return vol.Schema(
+        {
+            vol.Required("name", default=d.get("name", "")): str,
+            vol.Required(CONF_CALENDAR, default=d.get(CONF_CALENDAR, vol.UNDEFINED)): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="calendar")
+            ),
+            vol.Required(CONF_HEATERS, default=d.get(CONF_HEATERS, [])): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=heater_options, multiple=True, mode=selector.SelectSelectorMode.LIST
+                )
+            ),
+            vol.Required(CONF_USE_START, default=d[CONF_USE_START]): bool,
+            vol.Required(CONF_TRAVEL_START, default=d[CONF_TRAVEL_START]): _num(0, 240),
+            vol.Required(CONF_USE_END, default=d[CONF_USE_END]): bool,
+            vol.Required(CONF_TRAVEL_END, default=d[CONF_TRAVEL_END]): _num(0, 240),
+        }
+    )
+
+
+class CalendarSubentryFlow(ConfigSubentryFlow):
+    """Lägg till eller ändra en kalenderkoppling."""
+
+    def _heater_options(self) -> list[selector.SelectOptionDict]:
+        return [
+            selector.SelectOptionDict(value=sid, label=sub.title)
+            for sid, sub in self._get_entry().subentries.items()
+            if sub.subentry_type == SUBENTRY_TYPE
+        ]
+
+    def _clean(self, user_input: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+        data = dict(user_input)
+        data[CONF_TRAVEL_START] = int(data[CONF_TRAVEL_START])
+        data[CONF_TRAVEL_END] = int(data[CONF_TRAVEL_END])
+        valid = {o["value"] for o in self._heater_options()}
+        data[CONF_HEATERS] = [h for h in data.get(CONF_HEATERS, []) if h in valid]
+        errors: dict[str, str] = {}
+        if not data[CONF_HEATERS]:
+            errors[CONF_HEATERS] = "no_heater"
+        if not data[CONF_USE_START] and not data[CONF_USE_END]:
+            errors[CONF_USE_START] = "no_departure_point"
+        if not str(data.get("name", "")).strip():
+            errors["name"] = "name_required"
+        return data, errors
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        options = self._heater_options()
+        if not options:
+            return self.async_abort(reason="no_heaters")
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            data, errors = self._clean(user_input)
+            if not errors:
+                name = data.pop("name").strip()
+                return self.async_create_entry(title=name, data=data)
+        defaults = user_input or {CONF_HEATERS: [o["value"] for o in options]}
+        return self.async_show_form(
+            step_id="user", data_schema=_calendar_schema(defaults, options), errors=errors
+        )
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        subentry = self._get_reconfigure_subentry()
+        options = self._heater_options()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            data, errors = self._clean(user_input)
+            if not errors:
+                name = data.pop("name").strip()
+                return self.async_update_and_abort(self._get_entry(), subentry, title=name, data=data)
+        defaults = user_input or {"name": subentry.title, **subentry.data}
+        return self.async_show_form(
+            step_id="reconfigure", data_schema=_calendar_schema(defaults, options), errors=errors
+        )
