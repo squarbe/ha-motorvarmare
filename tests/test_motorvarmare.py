@@ -848,3 +848,36 @@ async def test_calendar_trips_persist_over_restart(hass, make, cal, hass_storage
     assert await hass.config_entries.async_reload(env.entry.entry_id)
     await hass.async_block_till_done()
     assert trips(env)[0]["skipped"] is True
+
+
+async def test_overlap_expiry_of_first_does_not_stop_started_second(hass, make, freezer):
+    """A:s slut (avresa + 60) får inte bryta B:s redan startade uppvärmning (live, ett relä)."""
+    env = await make()  # 0 °C -> 60 min
+    now = dt_util.now()
+    await env.call("add_departure", departure_at=(now + timedelta(minutes=30)).isoformat())   # A: värmer direkt
+    await env.call("add_departure", departure_at=(now + timedelta(minutes=100)).isoformat())  # B: start vid +40
+    await env.relay("on")
+    assert len(env.on) == 1
+    await env.tick(freezer, timedelta(minutes=41))  # B har startat
+    assert all(t["started"] for t in trips(env))
+    await env.tick(freezer, timedelta(minutes=50))  # +91: A (30+60) har gått ut
+    rows = trips(env)
+    assert len(rows) == 1 and rows[0]["started"]
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+    assert not env.off and len(env.on) == 1  # aldrig avslag, aldrig nytt påslag
+    await env.tick(freezer, timedelta(minutes=69, seconds=30))  # +160:30, B (100+60) ute
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "off"
+    assert len(env.off) == 1
+
+
+async def test_overlap_calendar_and_manual(hass, make, cal, freezer):
+    """Samma skydd när den ena avresan kommer från kalendern och den andra är manuell."""
+    now = dt_util.now()
+    cal.add(now + timedelta(minutes=45), now + timedelta(hours=8))  # kalender: avresa +30
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY), cal_sub(use_end=False)])
+    await env.call("add_departure", departure_at=(now + timedelta(minutes=100)).isoformat())
+    await env.relay("on")
+    await env.tick(freezer, timedelta(minutes=91))
+    await refresh(env)
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+    assert not env.off and len(env.on) == 1
