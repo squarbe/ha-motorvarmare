@@ -1,8 +1,10 @@
 # Motorvärmare
 
-Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.4.0, betatest.
+Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.4.1, betatest.
 
 Ersätter beta 0.1.0, som aldrig installerades. Den här versionen är **en** integration. Varje motorvärmaruttag läggs till som en underpost.
+
+**Nytt i 0.4.1:** egen ikon för integrationen (mappen `brand/`, kräver HA 2026.3 eller senare). Ikonen bygger på symbolen `car-electric` från Material Design Icons (Apache 2.0).
 
 **Nytt i 0.4.0:** du väljer vilka kalendrar som får användas. Avresan kan ligga före eller efter händelsens start och slut. En koppling kan begränsas till händelser vars beskrivning innehåller en text per uttag, t.ex. `MV1`. Se avsnitt 7.
 
