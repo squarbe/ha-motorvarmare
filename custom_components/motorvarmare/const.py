@@ -1,0 +1,44 @@
+"""Konstanter för Motorvärmare."""
+from datetime import timedelta
+
+DOMAIN = "motorvarmare"
+PLATFORMS = ["binary_sensor", "button", "sensor"]
+SUBENTRY_TYPE = "uttag"
+
+STORAGE_KEY = "motorvarmare.state"
+STORAGE_VERSION = 1
+
+# Konfiguration per uttag (subentry data)
+CONF_TEMPERATURE = "temperature_entity"
+CONF_RELAY = "relay_entity"
+CONF_LIVE = "live_control"
+CONF_AUTO_OFF = "auto_off_minutes"
+CONF_BASE = "base_minutes"
+CONF_SLOPE = "minutes_per_degree"
+CONF_MIN = "minimum_minutes"
+CONF_MAX = "maximum_minutes"
+CONF_FALLBACK = "fallback_minutes"
+CONF_CACHE = "temperature_cache_minutes"
+
+DEFAULTS = {
+    CONF_LIVE: False,
+    CONF_AUTO_OFF: 240,
+    CONF_BASE: 60,
+    CONF_SLOPE: 3.0,
+    CONF_MIN: 0,
+    CONF_MAX: 240,
+    CONF_FALLBACK: 180,
+    CONF_CACHE: 30,
+}
+
+# Konfiguration för hela integrationen (entry options)
+CONF_NOTIFY = "notify_service"
+
+# Fasta beslut
+AFTER_DEPARTURE = timedelta(minutes=60)  # behov kvar till avresa + 60 min (beslut)
+RELAY_CONFIRM = timedelta(seconds=30)  # tid för relä att bekräfta PÅ, och sammanhängande AV-tid före spärr
+UNAVAILABLE_WARN = timedelta(minutes=2)  # relä otillgängligt under behov -> varning
+AUTO_OFF_MARGIN = timedelta(minutes=5)  # integrationen slår själv av så här länge före Shellyns Auto Off
+TICK = timedelta(seconds=15)
+TEMP_VALID = (-60.0, 60.0)
+FORCE_CHOICES = (15, 30, 60, 120, 240)

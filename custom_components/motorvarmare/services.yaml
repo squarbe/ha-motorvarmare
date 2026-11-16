@@ -1,0 +1,65 @@
+add_departure:
+  fields:
+    heater_id:
+      required: true
+      selector:
+        text:
+    departure_at:
+      required: true
+      selector:
+        datetime:
+    label:
+      selector:
+        text:
+edit_departure:
+  fields:
+    heater_id:
+      required: true
+      selector:
+        text:
+    trip_id:
+      required: true
+      selector:
+        text:
+    departure_at:
+      selector:
+        datetime:
+    label:
+      selector:
+        text:
+remove_departure:
+  fields:
+    heater_id:
+      required: true
+      selector:
+        text:
+    trip_id:
+      required: true
+      selector:
+        text:
+force_start:
+  fields:
+    heater_id:
+      required: true
+      selector:
+        text:
+    minutes:
+      default: 60
+      selector:
+        number:
+          min: 15
+          max: 240
+          step: 15
+          unit_of_measurement: min
+stop_force:
+  fields:
+    heater_id:
+      required: true
+      selector:
+        text:
+acknowledge_fault:
+  fields:
+    heater_id:
+      required: true
+      selector:
+        text:
