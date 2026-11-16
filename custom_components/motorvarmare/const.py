@@ -39,16 +39,30 @@ CONF_USE_START = "use_start"
 CONF_TRAVEL_START = "travel_before_start"
 CONF_USE_END = "use_end"
 CONF_TRAVEL_END = "travel_before_end"
+CONF_START_DIRECTION = "start_direction"
+CONF_END_DIRECTION = "end_direction"
+CONF_FILTER = "event_filter"
+CONF_KEYWORDS = "keywords"  # {uttagets subentry_id: text}
+
+DIRECTION_BEFORE = "before"
+DIRECTION_AFTER = "after"
+FILTER_ALL = "all"
+FILTER_KEYWORD = "keyword"
 
 CALENDAR_DEFAULTS = {
     CONF_USE_START: True,
     CONF_TRAVEL_START: 0,
     CONF_USE_END: False,
     CONF_TRAVEL_END: 0,
+    CONF_START_DIRECTION: DIRECTION_BEFORE,
+    CONF_END_DIRECTION: DIRECTION_BEFORE,
+    CONF_FILTER: FILTER_ALL,
+    CONF_KEYWORDS: {},
 }
 
 # Konfiguration för hela integrationen (entry options)
 CONF_NOTIFY = "notify_service"
+CONF_ALLOWED_CALENDARS = "allowed_calendars"  # tom lista = alla kalendrar
 
 # Fasta beslut
 AFTER_DEPARTURE = timedelta(minutes=60)  # behov kvar till avresa + 60 min (beslut)

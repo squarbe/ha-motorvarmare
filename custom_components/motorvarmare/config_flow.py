@@ -19,9 +19,14 @@ from homeassistant.helpers import selector
 from .const import (
     CALENDAR_DEFAULTS,
     CALENDAR_SUBENTRY_TYPE,
+    CONF_ALLOWED_CALENDARS,
     CONF_AUTO_OFF,
     CONF_CALENDAR,
+    CONF_END_DIRECTION,
+    CONF_FILTER,
     CONF_HEATERS,
+    CONF_KEYWORDS,
+    CONF_START_DIRECTION,
     CONF_TRAVEL_END,
     CONF_TRAVEL_START,
     CONF_USE_END,
@@ -37,7 +42,11 @@ from .const import (
     CONF_SLOPE,
     CONF_TEMPERATURE,
     DEFAULTS,
+    DIRECTION_AFTER,
+    DIRECTION_BEFORE,
     DOMAIN,
+    FILTER_ALL,
+    FILTER_KEYWORD,
     SUBENTRY_TYPE,
 )
 
@@ -112,7 +121,9 @@ class MotorvarmareOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             value = user_input.get(CONF_NOTIFY, NO_NOTIFY)
-            return self.async_create_entry(data={} if value == NO_NOTIFY else {CONF_NOTIFY: value})
+            data: dict[str, Any] = {} if value == NO_NOTIFY else {CONF_NOTIFY: value}
+            data[CONF_ALLOWED_CALENDARS] = list(user_input.get(CONF_ALLOWED_CALENDARS) or [])
+            return self.async_create_entry(data=data)
         services = sorted(
             s for s in self.hass.services.async_services_for_domain("notify")
             if s not in ("send_message", "persistent_notification", "notify")
@@ -126,7 +137,11 @@ class MotorvarmareOptionsFlow(OptionsFlow):
                 {
                     vol.Required(CONF_NOTIFY, default=current): selector.SelectSelector(
                         selector.SelectSelectorConfig(options=options, mode=selector.SelectSelectorMode.DROPDOWN)
-                    )
+                    ),
+                    vol.Optional(
+                        CONF_ALLOWED_CALENDARS,
+                        default=list(self.config_entry.options.get(CONF_ALLOWED_CALENDARS, [])),
+                    ): selector.EntitySelector(selector.EntitySelectorConfig(domain="calendar", multiple=True)),
                 }
             ),
         )
@@ -174,42 +189,87 @@ class HeaterSubentryFlow(ConfigSubentryFlow):
         return self.async_show_form(step_id="reconfigure", data_schema=_heater_schema(defaults), errors=errors)
 
 
-def _calendar_schema(defaults: dict[str, Any], heater_options: list[selector.SelectOptionDict]) -> vol.Schema:
+
+def _direction() -> selector.SelectSelector:
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=[DIRECTION_BEFORE, DIRECTION_AFTER],
+            translation_key="direction",
+            mode=selector.SelectSelectorMode.LIST,
+        )
+    )
+
+
+def _calendar_schema(
+    defaults: dict[str, Any],
+    heater_options: list[selector.SelectOptionDict],
+    allowed: list[str],
+) -> vol.Schema:
     d = {**CALENDAR_DEFAULTS, **defaults}
+    cal_cfg = selector.EntitySelectorConfig(domain="calendar")
+    if allowed:
+        cal_cfg = selector.EntitySelectorConfig(domain="calendar", include_entities=allowed)
     return vol.Schema(
         {
             vol.Required("name", default=d.get("name", "")): str,
-            vol.Required(CONF_CALENDAR, default=d.get(CONF_CALENDAR, vol.UNDEFINED)): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="calendar")
-            ),
+            vol.Required(CONF_CALENDAR, default=d.get(CONF_CALENDAR, vol.UNDEFINED)): selector.EntitySelector(cal_cfg),
             vol.Required(CONF_HEATERS, default=d.get(CONF_HEATERS, [])): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=heater_options, multiple=True, mode=selector.SelectSelectorMode.LIST
                 )
             ),
+            vol.Required(CONF_FILTER, default=d[CONF_FILTER]): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[FILTER_ALL, FILTER_KEYWORD],
+                    translation_key="event_filter",
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            ),
             vol.Required(CONF_USE_START, default=d[CONF_USE_START]): bool,
             vol.Required(CONF_TRAVEL_START, default=d[CONF_TRAVEL_START]): _num(0, 240),
+            vol.Required(CONF_START_DIRECTION, default=d[CONF_START_DIRECTION]): _direction(),
             vol.Required(CONF_USE_END, default=d[CONF_USE_END]): bool,
             vol.Required(CONF_TRAVEL_END, default=d[CONF_TRAVEL_END]): _num(0, 240),
+            vol.Required(CONF_END_DIRECTION, default=d[CONF_END_DIRECTION]): _direction(),
         }
     )
 
 
 class CalendarSubentryFlow(ConfigSubentryFlow):
-    """Lägg till eller ändra en kalenderkoppling."""
+    """Lägg till eller ändra en kalenderkoppling.
 
-    def _heater_options(self) -> list[selector.SelectOptionDict]:
-        return [
-            selector.SelectOptionDict(value=sid, label=sub.title)
+    Steg 1: kalender, uttag, urval och avresetider.
+    Steg 2 (bara vid urval "text"): en text per valt uttag. Fälten heter som uttagen.
+    """
+
+    _data: dict[str, Any]
+    _title: str
+    _reconfigure: bool = False
+
+    def _heater_titles(self) -> dict[str, str]:
+        return {
+            sid: sub.title
             for sid, sub in self._get_entry().subentries.items()
             if sub.subentry_type == SUBENTRY_TYPE
-        ]
+        }
+
+    def _heater_options(self) -> list[selector.SelectOptionDict]:
+        return [selector.SelectOptionDict(value=sid, label=title) for sid, title in self._heater_titles().items()]
+
+    def _allowed(self) -> list[str]:
+        allowed = list(self._get_entry().options.get(CONF_ALLOWED_CALENDARS) or [])
+        if allowed and self._reconfigure:
+            # En befintlig koppling ska kunna ändras även om dess kalender har tagits bort ur listan.
+            current = self._get_reconfigure_subentry().data.get(CONF_CALENDAR)
+            if current and current not in allowed:
+                allowed.append(current)
+        return allowed
 
     def _clean(self, user_input: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
         data = dict(user_input)
         data[CONF_TRAVEL_START] = int(data[CONF_TRAVEL_START])
         data[CONF_TRAVEL_END] = int(data[CONF_TRAVEL_END])
-        valid = {o["value"] for o in self._heater_options()}
+        valid = set(self._heater_titles())
         data[CONF_HEATERS] = [h for h in data.get(CONF_HEATERS, []) if h in valid]
         errors: dict[str, str] = {}
         if not data[CONF_HEATERS]:
@@ -218,33 +278,73 @@ class CalendarSubentryFlow(ConfigSubentryFlow):
             errors[CONF_USE_START] = "no_departure_point"
         if not str(data.get("name", "")).strip():
             errors["name"] = "name_required"
+        allowed = self._allowed()
+        if allowed and data.get(CONF_CALENDAR) not in allowed:
+            errors[CONF_CALENDAR] = "calendar_not_allowed"
         return data, errors
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+    async def _finish(self) -> SubentryFlowResult:
+        if self._reconfigure:
+            return self.async_update_and_abort(
+                self._get_entry(), self._get_reconfigure_subentry(), title=self._title, data=self._data
+            )
+        return self.async_create_entry(title=self._title, data=self._data)
+
+    async def _step_main(self, step_id: str, user_input: dict[str, Any] | None, defaults: dict[str, Any]) -> SubentryFlowResult:
         options = self._heater_options()
-        if not options:
-            return self.async_abort(reason="no_heaters")
         errors: dict[str, str] = {}
         if user_input is not None:
             data, errors = self._clean(user_input)
             if not errors:
-                name = data.pop("name").strip()
-                return self.async_create_entry(title=name, data=data)
-        defaults = user_input or {CONF_HEATERS: [o["value"] for o in options]}
+                self._title = data.pop("name").strip()
+                self._data = data
+                if data[CONF_FILTER] == FILTER_KEYWORD:
+                    return await self.async_step_keywords()
+                self._data[CONF_KEYWORDS] = {}
+                return await self._finish()
         return self.async_show_form(
-            step_id="user", data_schema=_calendar_schema(defaults, options), errors=errors
+            step_id=step_id,
+            data_schema=_calendar_schema(user_input or defaults, options, self._allowed()),
+            errors=errors,
         )
 
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        if not self._heater_titles():
+            return self.async_abort(reason="no_heaters")
+        return await self._step_main("user", user_input, {CONF_HEATERS: list(self._heater_titles())})
+
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        self._reconfigure = True
         subentry = self._get_reconfigure_subentry()
-        options = self._heater_options()
+        return await self._step_main("reconfigure", user_input, {"name": subentry.title, **subentry.data})
+
+    async def async_step_keywords(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        titles = self._heater_titles()
+        chosen = [(hid, titles[hid]) for hid in self._data[CONF_HEATERS]]
+        current: dict[str, str] = {}
+        if self._reconfigure:
+            current = dict(self._get_reconfigure_subentry().data.get(CONF_KEYWORDS) or {})
         errors: dict[str, str] = {}
         if user_input is not None:
-            data, errors = self._clean(user_input)
-            if not errors:
-                name = data.pop("name").strip()
-                return self.async_update_and_abort(self._get_entry(), subentry, title=name, data=data)
-        defaults = user_input or {"name": subentry.title, **subentry.data}
+            keywords = {
+                hid: str(user_input.get(title, "")).strip()
+                for hid, title in chosen
+                if str(user_input.get(title, "")).strip()
+            }
+            if not keywords:
+                errors["base"] = "no_keyword"
+            else:
+                self._data[CONF_KEYWORDS] = keywords
+                return await self._finish()
+        schema = vol.Schema(
+            {
+                vol.Optional(title, description={"suggested_value": current.get(hid, "")}): str
+                for hid, title in chosen
+            }
+        )
         return self.async_show_form(
-            step_id="reconfigure", data_schema=_calendar_schema(defaults, options), errors=errors
+            step_id="keywords",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"calendar": self._title},
         )

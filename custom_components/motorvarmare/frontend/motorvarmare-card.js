@@ -1,5 +1,5 @@
-/* Motorvärmare – Lovelace-kort (version 0.3). Inga externa beroenden. */
-const MV_VERSION = "0.3.0";
+/* Motorvärmare – Lovelace-kort (version 0.4). Inga externa beroenden. */
+const MV_VERSION = "0.4.0";
 
 class MotorvarmareCard extends HTMLElement {
   setConfig(config) {

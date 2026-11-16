@@ -3,10 +3,12 @@
 Varje kalenderkoppling (underpost "kalender") anger
   - kalendern (t.ex. en Google-kalender som redan finns i HA),
   - vilka uttag avresorna gäller,
-  - om händelsens start ger en avresa, och restiden före start,
-  - om händelsens slut ger en avresa, och restiden före slut.
+  - om händelsens start ger en avresa, och minuter före/efter start,
+  - om händelsens slut ger en avresa, och minuter före/efter slut.
 
-Alla händelser med klockslag blir avresor. Heldagshändelser ignoreras.
+Urval per koppling: alla händelser med klockslag, eller bara händelser vars
+beskrivning innehåller uttagets egen text (t.ex. "MV1"). Heldagshändelser ignoreras.
+Avresan kan ligga ett antal minuter före eller efter händelsens start/slut.
 Läsningen görs med tjänsten calendar.get_events, var 5:e minut och när
 kalenderentiteten ändras. Misslyckas läsningen behålls tidigare avresor.
 """
@@ -16,6 +18,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 import hashlib
 import logging
+import re
 from typing import Any
 
 from homeassistant.core import Event, HomeAssistant, callback
@@ -31,11 +34,17 @@ from .const import (
     CALENDAR_LOOKBACK,
     CALENDAR_REFRESH,
     CONF_CALENDAR,
+    CONF_END_DIRECTION,
+    CONF_FILTER,
     CONF_HEATERS,
+    CONF_KEYWORDS,
+    CONF_START_DIRECTION,
     CONF_TRAVEL_END,
     CONF_TRAVEL_START,
     CONF_USE_END,
     CONF_USE_START,
+    DIRECTION_AFTER,
+    FILTER_KEYWORD,
 )
 from .heater import Heater
 
@@ -58,10 +67,38 @@ def _event_time(value: Any) -> datetime | None:
     return dt_util.as_utc(parsed)
 
 
+def _offset(minutes: Any, direction: str) -> timedelta:
+    """Avresans förskjutning från händelsens tidpunkt: negativ = före, positiv = efter."""
+    delta = timedelta(minutes=int(minutes))
+    return delta if direction == DIRECTION_AFTER else -delta
+
+
+def keyword_matches(keyword: str, text: str) -> bool:
+    """Texten ska finnas som eget ord (MV1 matchar inte MV12). Stora/små bokstäver spelar ingen roll."""
+    keyword = keyword.strip()
+    if not keyword:
+        return False
+    return re.search(rf"(?<!\w){re.escape(keyword)}(?!\w)", text or "", re.IGNORECASE) is not None
+
+
+def event_applies(config: dict[str, Any], heater_id: str, event: dict[str, Any]) -> bool:
+    """Gäller händelsen detta uttag? Alla händelser, eller bara de vars beskrivning innehåller uttagets text."""
+    cfg = {**CALENDAR_DEFAULTS, **config}
+    if heater_id not in cfg.get(CONF_HEATERS, []):
+        return False
+    if cfg[CONF_FILTER] != FILTER_KEYWORD:
+        return True
+    keyword = (cfg.get(CONF_KEYWORDS) or {}).get(heater_id, "")
+    return keyword_matches(keyword, str(event.get("description") or ""))
+
+
 def departures_from_events(
     source_id: str, config: dict[str, Any], events: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """Räkna fram avresor (UTC) ur kalenderhändelser enligt kopplingens inställningar."""
+    """Räkna fram avresor (UTC) ur kalenderhändelser enligt kopplingens inställningar.
+
+    Urvalet per uttag (event_applies) görs inte här, utan av anroparen.
+    """
     cfg = {**CALENDAR_DEFAULTS, **config}
     result: list[dict[str, Any]] = []
     for event in events:
@@ -75,16 +112,18 @@ def departures_from_events(
             result.append(
                 {
                     "id": "k" + hashlib.sha1(f"{base}|start".encode()).hexdigest()[:11],
-                    "departure_at": start - timedelta(minutes=int(cfg[CONF_TRAVEL_START])),
+                    "departure_at": start + _offset(cfg[CONF_TRAVEL_START], cfg[CONF_START_DIRECTION]),
                     "label": summary,
+                    "event": event,
                 }
             )
         if cfg[CONF_USE_END] and end is not None:
             result.append(
                 {
                     "id": "k" + hashlib.sha1(f"{base}|end".encode()).hexdigest()[:11],
-                    "departure_at": end - timedelta(minutes=int(cfg[CONF_TRAVEL_END])),
+                    "departure_at": end + _offset(cfg[CONF_TRAVEL_END], cfg[CONF_END_DIRECTION]),
                     "label": f"{summary} (slut)",
+                    "event": event,
                 }
             )
     return result
@@ -162,4 +201,5 @@ class CalendarSource:
         self.last_read = now
         departures = departures_from_events(self.source_id, self.config, events)
         for heater in self.targets():
-            await heater.async_sync_calendar(self.source_id, self.name, departures)
+            own = [d for d in departures if event_applies(self.config, heater.heater_id, d["event"])]
+            await heater.async_sync_calendar(self.source_id, self.name, own)

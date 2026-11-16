@@ -13,12 +13,14 @@
   "options": {
     "step": {
       "init": {
-        "title": "Larm",
+        "title": "Inställningar",
         "data": {
-          "notify_service": "Skicka larm till"
+          "notify_service": "Skicka larm till",
+          "allowed_calendars": "Kalendrar som får användas"
         },
         "data_description": {
-          "notify_service": "Mobil enhet (notify-tjänst) som får larm vid säkerhetsspärr. Larm visas alltid även som avisering i Home Assistant."
+          "notify_service": "Mobil enhet (notify-tjänst) som får larm vid säkerhetsspärr. Larm visas alltid även som avisering i Home Assistant.",
+          "allowed_calendars": "Bara dessa kalendrar går att välja i en kalenderkoppling. Lämna tomt för att tillåta alla."
         }
       }
     }
@@ -98,16 +100,20 @@
             "calendar_entity": "Kalender",
             "heaters": "Uttag",
             "use_start": "Avresa vid händelsens start",
-            "travel_before_start": "Restid före start",
+            "travel_before_start": "Minuter från start",
             "use_end": "Avresa vid händelsens slut",
-            "travel_before_end": "Restid före slut"
+            "travel_before_end": "Minuter från slut",
+            "event_filter": "Vilka händelser",
+            "start_direction": "Före eller efter start",
+            "end_direction": "Före eller efter slut"
           },
           "data_description": {
-            "calendar_entity": "Alla händelser med klockslag blir avresor. Heldagshändelser ignoreras.",
+            "calendar_entity": "Heldagshändelser ignoreras alltid. Listan begränsas av integrationens inställning Kalendrar som får användas.",
             "heaters": "Uttag som ska värmas för händelserna i kalendern.",
-            "travel_before_start": "Avresetid = händelsens start minus restiden.",
+            "travel_before_start": "T.ex. 15 före: start 08:00 ger avresa 07:45.",
             "use_end": "Ger en extra avresa, t.ex. för hämtning vid förskolan.",
-            "travel_before_end": "Avresetid = händelsens slut minus restiden."
+            "travel_before_end": "T.ex. 15 före: slut 16:00 ger avresa 15:45.",
+            "event_filter": "Med text väljer du i nästa steg en text per uttag. Bara händelser vars beskrivning innehåller texten blir avresor för det uttaget."
           }
         },
         "reconfigure": {
@@ -117,23 +123,33 @@
             "calendar_entity": "Kalender",
             "heaters": "Uttag",
             "use_start": "Avresa vid händelsens start",
-            "travel_before_start": "Restid före start",
+            "travel_before_start": "Minuter från start",
             "use_end": "Avresa vid händelsens slut",
-            "travel_before_end": "Restid före slut"
+            "travel_before_end": "Minuter från slut",
+            "event_filter": "Vilka händelser",
+            "start_direction": "Före eller efter start",
+            "end_direction": "Före eller efter slut"
           },
           "data_description": {
-            "calendar_entity": "Alla händelser med klockslag blir avresor. Heldagshändelser ignoreras.",
+            "calendar_entity": "Heldagshändelser ignoreras alltid. Listan begränsas av integrationens inställning Kalendrar som får användas.",
             "heaters": "Uttag som ska värmas för händelserna i kalendern.",
-            "travel_before_start": "Avresetid = händelsens start minus restiden.",
+            "travel_before_start": "T.ex. 15 före: start 08:00 ger avresa 07:45.",
             "use_end": "Ger en extra avresa, t.ex. för hämtning vid förskolan.",
-            "travel_before_end": "Avresetid = händelsens slut minus restiden."
+            "travel_before_end": "T.ex. 15 före: slut 16:00 ger avresa 15:45.",
+            "event_filter": "Med text väljer du i nästa steg en text per uttag. Bara händelser vars beskrivning innehåller texten blir avresor för det uttaget."
           }
+        },
+        "keywords": {
+          "title": "Text per uttag",
+          "description": "Händelser i {calendar} blir avresor för ett uttag bara om beskrivningen innehåller uttagets text, som eget ord (t.ex. MV1). Stora och små bokstäver spelar ingen roll. Lämna tomt för uttag som inte ska styras av kalendern."
         }
       },
       "error": {
         "no_heater": "Välj minst ett uttag.",
         "no_departure_point": "Välj start, slut eller båda.",
-        "name_required": "Ange ett namn."
+        "name_required": "Ange ett namn.",
+        "calendar_not_allowed": "Kalendern är inte tillåten. Ändra Kalendrar som får användas i integrationens inställningar.",
+        "no_keyword": "Ange en text för minst ett uttag."
       },
       "abort": {
         "no_heaters": "Lägg till ett motorvärmaruttag först.",
@@ -261,6 +277,20 @@
     "refresh_calendars": {
       "name": "Läs om kalendrar",
       "description": "Läser om alla kopplade kalendrar direkt."
+    }
+  },
+  "selector": {
+    "direction": {
+      "options": {
+        "before": "Före",
+        "after": "Efter"
+      }
+    },
+    "event_filter": {
+      "options": {
+        "all": "Alla händelser med klockslag",
+        "keyword": "Bara händelser med text i beskrivningen"
+      }
     }
   }
 }

@@ -13,12 +13,14 @@
   "options": {
     "step": {
       "init": {
-        "title": "Larm",
+        "title": "Settings",
         "data": {
-          "notify_service": "Skicka larm till"
+          "notify_service": "Skicka larm till",
+          "allowed_calendars": "Calendars that may be used"
         },
         "data_description": {
-          "notify_service": "Mobil enhet (notify-tjänst) som får larm vid säkerhetsspärr. Larm visas alltid även som avisering i Home Assistant."
+          "notify_service": "Mobil enhet (notify-tjänst) som får larm vid säkerhetsspärr. Larm visas alltid även som avisering i Home Assistant.",
+          "allowed_calendars": "Only these calendars can be chosen in a calendar link. Leave empty to allow all."
         }
       }
     }
@@ -98,16 +100,20 @@
             "calendar_entity": "Calendar",
             "heaters": "Outlets",
             "use_start": "Departure at event start",
-            "travel_before_start": "Travel time before start",
+            "travel_before_start": "Minutes from start",
             "use_end": "Departure at event end",
-            "travel_before_end": "Travel time before end"
+            "travel_before_end": "Minutes from end",
+            "event_filter": "Which events",
+            "start_direction": "Before or after start",
+            "end_direction": "Before or after end"
           },
           "data_description": {
-            "calendar_entity": "Every timed event becomes a departure. All-day events are ignored.",
+            "calendar_entity": "All-day events are always ignored. The list is limited by the integration setting Calendars that may be used.",
             "heaters": "Outlets to heat for the events in this calendar.",
-            "travel_before_start": "Departure = event start minus travel time.",
+            "travel_before_start": "E.g. 15 before: start 08:00 gives departure 07:45.",
             "use_end": "Adds an extra departure, e.g. for pick-up.",
-            "travel_before_end": "Departure = event end minus travel time."
+            "travel_before_end": "E.g. 15 before: end 16:00 gives departure 15:45.",
+            "event_filter": "With text you choose one text per outlet in the next step. Only events whose description contains the text become departures for that outlet."
           }
         },
         "reconfigure": {
@@ -117,23 +123,33 @@
             "calendar_entity": "Calendar",
             "heaters": "Outlets",
             "use_start": "Departure at event start",
-            "travel_before_start": "Travel time before start",
+            "travel_before_start": "Minutes from start",
             "use_end": "Departure at event end",
-            "travel_before_end": "Travel time before end"
+            "travel_before_end": "Minutes from end",
+            "event_filter": "Which events",
+            "start_direction": "Before or after start",
+            "end_direction": "Before or after end"
           },
           "data_description": {
-            "calendar_entity": "Every timed event becomes a departure. All-day events are ignored.",
+            "calendar_entity": "All-day events are always ignored. The list is limited by the integration setting Calendars that may be used.",
             "heaters": "Outlets to heat for the events in this calendar.",
-            "travel_before_start": "Departure = event start minus travel time.",
+            "travel_before_start": "E.g. 15 before: start 08:00 gives departure 07:45.",
             "use_end": "Adds an extra departure, e.g. for pick-up.",
-            "travel_before_end": "Departure = event end minus travel time."
+            "travel_before_end": "E.g. 15 before: end 16:00 gives departure 15:45.",
+            "event_filter": "With text you choose one text per outlet in the next step. Only events whose description contains the text become departures for that outlet."
           }
+        },
+        "keywords": {
+          "title": "Text per outlet",
+          "description": "Events in {calendar} become departures for an outlet only if the description contains that outlet's text as a separate word (e.g. MV1). Case does not matter. Leave empty for outlets this calendar should not control."
         }
       },
       "error": {
         "no_heater": "Select at least one outlet.",
         "no_departure_point": "Select start, end or both.",
-        "name_required": "Enter a name."
+        "name_required": "Enter a name.",
+        "calendar_not_allowed": "This calendar is not allowed. Change Calendars that may be used in the integration settings.",
+        "no_keyword": "Enter a text for at least one outlet."
       },
       "abort": {
         "no_heaters": "Add an engine heater outlet first.",
@@ -261,6 +277,20 @@
     "refresh_calendars": {
       "name": "Refresh calendars",
       "description": "Re-reads all linked calendars now."
+    }
+  },
+  "selector": {
+    "direction": {
+      "options": {
+        "before": "Before",
+        "after": "After"
+      }
+    },
+    "event_filter": {
+      "options": {
+        "all": "All timed events",
+        "keyword": "Only events with text in the description"
+      }
     }
   }
 }

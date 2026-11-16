@@ -629,9 +629,12 @@ class FakeCalendar:
 
         hass.services.async_register("calendar", "get_events", handler, supports_response=SupportsResponse.ONLY)
 
-    def add(self, start, end, summary="Lämning"):
+    def add(self, start, end, summary="Lämning", description=None):
         fmt = lambda v: v if isinstance(v, str) else dt_util.as_local(v).isoformat()
-        self.events.append({"start": fmt(start), "end": fmt(end), "summary": summary})
+        event = {"start": fmt(start), "end": fmt(end), "summary": summary}
+        if description is not None:
+            event["description"] = description
+        self.events.append(event)
 
 
 @pytest.fixture
@@ -881,3 +884,140 @@ async def test_overlap_calendar_and_manual(hass, make, cal, freezer):
     await refresh(env)
     assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
     assert not env.off and len(env.on) == 1
+
+
+
+# ---------------- 0.4: tillåtna kalendrar, före/efter, text per uttag ----------------
+
+FAM = "calendar.familj"
+
+
+async def test_after_direction(hass, make, cal):
+    now = dt_util.now().replace(second=0, microsecond=0)
+    start, end = now + timedelta(hours=5), now + timedelta(hours=9)
+    cal.add(start, end)
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False),
+                           cal_sub(start_direction="after", travel_before_start=10,
+                                   end_direction="before", travel_before_end=20)])
+    assert [dt_util.parse_datetime(r["departure_at"]) for r in trips(env)] == [
+        start + timedelta(minutes=10), end - timedelta(minutes=20)]
+
+
+async def test_keyword_per_heater_in_description(hass, make, cal):
+    now = dt_util.now()
+    cal.add(now + timedelta(hours=3), now + timedelta(hours=4), "Tandläkare", "Ta bilen. mv1")
+    cal.add(now + timedelta(hours=5), now + timedelta(hours=6), "Träning", "MV2")
+    cal.add(now + timedelta(hours=7), now + timedelta(hours=8), "Middag MV1", "ingen text här")  # bara i titeln
+    cal.add(now + timedelta(hours=9), now + timedelta(hours=10), "Möte", "MV12")  # inte eget ord
+    cal.add(now + timedelta(hours=11), now + timedelta(hours=12), "Båda", "MV1, MV2")
+    cal.add(now + timedelta(hours=13), now + timedelta(hours=14), "Utan beskrivning")
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), sub(SID2, "Motorvärmare 2", RELAY2, live=False),
+                           cal_sub(heaters=(SID, SID2), use_end=False, event_filter="keyword",
+                                   keywords={SID: "MV1", SID2: "MV2"})])
+    assert [r["label"] for r in trips(env)] == ["Tandläkare", "Båda"]
+    assert [r["label"] for r in trips(env, "sensor.motorvarmare_2_avresor")] == ["Träning", "Båda"]
+
+
+async def test_keyword_flow_two_steps(hass, make, cal):
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), sub(SID2, "Motorvärmare 2", RELAY2, live=False)])
+    entry = env.entry
+    r = await hass.config_entries.subentries.async_init((entry.entry_id, "kalender"), context={"source": "user"})
+    base = {"name": "Familj", "calendar_entity": CAL, "heaters": [SID, SID2], "event_filter": "keyword",
+            "use_start": True, "travel_before_start": 0, "start_direction": "before",
+            "use_end": False, "travel_before_end": 0, "end_direction": "before"}
+    r = await hass.config_entries.subentries.async_configure(r["flow_id"], base)
+    assert r["type"] is FlowResultType.FORM and r["step_id"] == "keywords"
+    assert set(r["data_schema"].schema) == {"Motorvärmare 1", "Motorvärmare 2"}
+    r = await hass.config_entries.subentries.async_configure(r["flow_id"], {})
+    assert r["errors"] == {"base": "no_keyword"}
+    now = dt_util.now()
+    cal.add(now + timedelta(hours=3), now + timedelta(hours=4), "Resa", "mv2")
+    r = await hass.config_entries.subentries.async_configure(r["flow_id"], {"Motorvärmare 2": " MV2 "})
+    assert r["type"] is FlowResultType.CREATE_ENTRY
+    sub_obj = next(s for s in entry.subentries.values() if s.subentry_type == "kalender")
+    assert sub_obj.data["keywords"] == {SID2: "MV2"}
+    await hass.async_block_till_done()
+    assert trips(env) == []
+    assert len(trips(env, "sensor.motorvarmare_2_avresor")) == 1
+
+
+async def test_keyword_reconfigure_keeps_and_changes_text(hass, make, cal):
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False),
+                           cal_sub(use_end=False, event_filter="keyword", keywords={SID: "MV1"})])
+    entry = env.entry
+    r = await entry.start_subentry_reconfigure_flow(hass, CSID)
+    assert r["step_id"] == "reconfigure"
+    base = {"name": "Familj", "calendar_entity": CAL, "heaters": [SID], "event_filter": "keyword",
+            "use_start": True, "travel_before_start": 0, "start_direction": "before",
+            "use_end": False, "travel_before_end": 0, "end_direction": "before"}
+    r = await hass.config_entries.subentries.async_configure(r["flow_id"], base)
+    assert r["step_id"] == "keywords"
+    r = await hass.config_entries.subentries.async_configure(r["flow_id"], {"Motorvärmare 1": "bil"})
+    assert r["type"] is FlowResultType.ABORT and r["reason"] == "reconfigure_successful"
+    assert entry.subentries[CSID].data["keywords"] == {SID: "bil"}
+    assert entry.subentries[CSID].title == "Familj"
+
+
+async def test_switch_to_all_clears_keywords(hass, make, cal):
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False),
+                           cal_sub(use_end=False, event_filter="keyword", keywords={SID: "MV1"})])
+    r = await env.entry.start_subentry_reconfigure_flow(hass, CSID)
+    r = await hass.config_entries.subentries.async_configure(r["flow_id"], {
+        "name": "Förskola", "calendar_entity": CAL, "heaters": [SID], "event_filter": "all",
+        "use_start": True, "travel_before_start": 15, "start_direction": "before",
+        "use_end": True, "travel_before_end": 15, "end_direction": "before"})
+    assert r["type"] is FlowResultType.ABORT
+    assert env.entry.subentries[CSID].data["keywords"] == {}
+
+
+async def test_allowed_calendars_option_and_validation(hass, make, cal):
+    hass.states.async_set(FAM, "off")
+    env = await make(options={})
+    entry = env.entry
+    r = await hass.config_entries.options.async_init(entry.entry_id)
+    r = await hass.config_entries.options.async_configure(
+        r["flow_id"], {"notify_service": "__ingen__", "allowed_calendars": [CAL]})
+    assert r["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert entry.options == {"allowed_calendars": [CAL]}
+    r = await hass.config_entries.subentries.async_init((entry.entry_id, "kalender"), context={"source": "user"})
+    base = {"name": "Familj", "calendar_entity": FAM, "heaters": [SID], "event_filter": "all",
+            "use_start": True, "travel_before_start": 0, "start_direction": "before",
+            "use_end": False, "travel_before_end": 0, "end_direction": "before"}
+    from homeassistant.data_entry_flow import InvalidData
+    with pytest.raises(InvalidData):  # väljaren erbjuder bara tillåtna kalendrar
+        await hass.config_entries.subentries.async_configure(r["flow_id"], base)
+    r = await hass.config_entries.subentries.async_configure(r["flow_id"], {**base, "calendar_entity": CAL})
+    assert r["type"] is FlowResultType.CREATE_ENTRY
+
+
+async def test_empty_allowed_list_allows_all(hass, make, cal):
+    hass.states.async_set(FAM, "off")
+    env = await make(options={"allowed_calendars": []})
+    r = await hass.config_entries.subentries.async_init((env.entry.entry_id, "kalender"), context={"source": "user"})
+    r = await hass.config_entries.subentries.async_configure(r["flow_id"], {
+        "name": "Familj", "calendar_entity": FAM, "heaters": [SID], "event_filter": "all",
+        "use_start": True, "travel_before_start": 0, "start_direction": "before",
+        "use_end": False, "travel_before_end": 0, "end_direction": "before"})
+    assert r["type"] is FlowResultType.CREATE_ENTRY
+
+
+async def test_notify_option_kept_with_allowed_calendars(hass, make):
+    env = await make()
+    r = await hass.config_entries.options.async_init(env.entry.entry_id)
+    r = await hass.config_entries.options.async_configure(
+        r["flow_id"], {"notify_service": "mobile_app_ia", "allowed_calendars": []})
+    assert env.entry.options == {"notify_service": "mobile_app_ia", "allowed_calendars": []}
+
+
+
+async def test_reconfigure_keeps_calendar_removed_from_allowed(hass, make, cal):
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), cal_sub(use_end=False)],
+                     options={"allowed_calendars": [FAM]})
+    hass.states.async_set(FAM, "off")
+    r = await env.entry.start_subentry_reconfigure_flow(hass, CSID)
+    r = await hass.config_entries.subentries.async_configure(r["flow_id"], {
+        "name": "Förskola", "calendar_entity": CAL, "heaters": [SID], "event_filter": "all",
+        "use_start": True, "travel_before_start": 10, "start_direction": "before",
+        "use_end": False, "travel_before_end": 0, "end_direction": "before"})
+    assert r["type"] is FlowResultType.ABORT and r["reason"] == "reconfigure_successful"
