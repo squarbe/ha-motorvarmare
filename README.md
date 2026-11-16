@@ -1,8 +1,10 @@
 # Motorvärmare
 
-Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.5.0, betatest.
+Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.6.0, betatest.
 
 Ersätter beta 0.1.0, som aldrig installerades. Den här versionen är **en** integration. Varje motorvärmaruttag läggs till som en underpost.
+
+**Nytt i 0.6.0:** larmmottagare per uttag. Larmet för ett uttag kan gå till en eller flera egna telefoner, t.ex. den som kör bilen. Uttag utan egna mottagare använder integrationens gemensamma.
 
 **Nytt i 0.5.0:** kortet visar alla uttag automatiskt när `entity` utelämnas, så ett nytt uttag dyker upp i dashboarden utan ändringar. Kortet har en visuell redigerare och visar effekt från reläet. Se avsnitt 3.
 
@@ -37,10 +39,11 @@ Inga YAML-filer behövs.
    - **Relä:** `switch.utomhus_motorvarmare_1` (respektive `_2`).
    - **Styr reläet på riktigt:** **AV** (testläge) under betatestet.
    - **Shellyns Auto Off:** 240. Ska vara samma värde som du ställer in i Shellyn.
+   - **Larm skickas till:** en eller flera telefoner (`notify.mobile_app_…`) som får larm för just detta uttag. Lämna tomt för att använda integrationens gemensamma mottagare.
    - **Uppvärmningskurva:** standardvärdena ger 60 − 3 × temperatur, samma som din nuvarande mallhjälpare, men begränsad till 0–240 min.
 3. Ändra ett uttag senare via de tre punkterna på uttaget → **Konfigurera om**. Fler uttag läggs till på samma sätt som det första.
 4. **Inställningar** (kugghjulet på integrationen):
-   - **Skicka larm till:** din telefons `notify.mobile_app_…`. Larm visas alltid även som avisering i Home Assistant.
+   - **Gemensam larmmottagare:** används för uttag som inte har egna larmmottagare. Larm visas alltid även som avisering i Home Assistant.
    - **Kalendrar som får användas:** t.ex. Förskola och Familj. Bara dessa går att välja i en kalenderkoppling. Lämna tomt för att tillåta alla.
 
 ## 3. Kortet

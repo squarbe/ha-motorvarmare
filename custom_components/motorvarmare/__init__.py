@@ -22,6 +22,7 @@ from homeassistant.helpers.typing import ConfigType
 from .calendar_sync import CalendarSource
 from .const import (
     CALENDAR_SUBENTRY_TYPE,
+    CONF_HEATER_NOTIFY,
     CONF_HEATERS,
     CONF_NOTIFY,
     DOMAIN,
@@ -85,10 +86,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: MotorvarmareConfigEntry)
     def save() -> None:
         store.async_delay_save(lambda: runtime.data, 2)
 
-    def notify(notification_id: str, title: str, message: str) -> None:
+    def notify(
+        notification_id: str, title: str, message: str, services: list[str] | None = None
+    ) -> None:
+        """Larm: alltid avisering i HA, plus push till uttagets egna mottagare.
+
+        Har uttaget inga egna mottagare används integrationens gemensamma.
+        """
         persistent_notification.async_create(hass, message, title, notification_id)
-        service = entry.options.get(CONF_NOTIFY)
-        if service and hass.services.has_service("notify", service):
+        targets = list(services or [])
+        if not targets and entry.options.get(CONF_NOTIFY):
+            targets = [entry.options[CONF_NOTIFY]]
+        for service in targets:
+            if not hass.services.has_service("notify", service):
+                _LOGGER.warning("Notifieringstjänsten notify.%s finns inte", service)
+                continue
             hass.async_create_task(
                 hass.services.async_call(
                     "notify",
@@ -106,8 +118,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: MotorvarmareConfigEntry)
                     blocking=False,
                 )
             )
-        elif service:
-            _LOGGER.warning("Notifieringstjänsten notify.%s finns inte", service)
 
     def dismiss(notification_id: str) -> None:
         persistent_notification.async_dismiss(hass, notification_id)
@@ -115,8 +125,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: MotorvarmareConfigEntry)
     for subentry_id in current:
         sub = entry.subentries[subentry_id]
         state = data["heaters"].setdefault(subentry_id, empty_state())
+        recipients = list(sub.data.get(CONF_HEATER_NOTIFY) or [])
         runtime.heaters[subentry_id] = Heater(
-            hass, subentry_id, sub.title, dict(sub.data), state, save, notify, dismiss
+            hass,
+            subentry_id,
+            sub.title,
+            dict(sub.data),
+            state,
+            save,
+            lambda nid, title, msg, _r=recipients: notify(nid, title, msg, _r),
+            dismiss,
         )
 
     linked: set[str] = set()

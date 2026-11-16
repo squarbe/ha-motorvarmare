@@ -20,6 +20,7 @@ CONF_MIN = "minimum_minutes"
 CONF_MAX = "maximum_minutes"
 CONF_FALLBACK = "fallback_minutes"
 CONF_CACHE = "temperature_cache_minutes"
+CONF_HEATER_NOTIFY = "notify_services"  # larmmottagare för just detta uttag; tom = integrationens gemensamma
 
 DEFAULTS = {
     CONF_LIVE: False,

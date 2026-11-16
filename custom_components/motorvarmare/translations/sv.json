@@ -15,11 +15,11 @@
       "init": {
         "title": "Inställningar",
         "data": {
-          "notify_service": "Skicka larm till",
+          "notify_service": "Gemensam larmmottagare",
           "allowed_calendars": "Kalendrar som får användas"
         },
         "data_description": {
-          "notify_service": "Mobil enhet (notify-tjänst) som får larm vid säkerhetsspärr. Larm visas alltid även som avisering i Home Assistant.",
+          "notify_service": "Används för uttag som inte har egna larmmottagare. Larm visas alltid även som avisering i Home Assistant.",
           "allowed_calendars": "Bara dessa kalendrar går att välja i en kalenderkoppling. Lämna tomt för att tillåta alla."
         }
       }
@@ -45,13 +45,15 @@
             "minimum_minutes": "Kortaste uppvärmningstid",
             "maximum_minutes": "Längsta uppvärmningstid",
             "fallback_minutes": "Reservtid utan temperatur",
-            "temperature_cache_minutes": "Använd senaste giltiga temperatur i"
+            "temperature_cache_minutes": "Använd senaste giltiga temperatur i",
+            "notify_services": "Larm skickas till"
           },
           "data_description": {
             "relay_entity": "Kan lämnas tomt i testläge.",
             "live_control": "AV = testläge: inga kommandon skickas till reläet.",
             "auto_off_minutes": "Samma värde som är inställt i Shellyn. Integrationen slår själv av 5 minuter före.",
-            "fallback_minutes": "Används när temperaturgivaren inte har gett något giltigt värde under tiden nedan."
+            "fallback_minutes": "Används när temperaturgivaren inte har gett något giltigt värde under tiden nedan.",
+            "notify_services": "En eller flera telefoner (notify-tjänster) som får larm för just detta uttag. Lämna tomt för att använda integrationens gemensamma mottagare. Larm visas alltid även som avisering i Home Assistant."
           }
         },
         "reconfigure": {
@@ -67,13 +69,15 @@
             "minimum_minutes": "Kortaste uppvärmningstid",
             "maximum_minutes": "Längsta uppvärmningstid",
             "fallback_minutes": "Reservtid utan temperatur",
-            "temperature_cache_minutes": "Använd senaste giltiga temperatur i"
+            "temperature_cache_minutes": "Använd senaste giltiga temperatur i",
+            "notify_services": "Larm skickas till"
           },
           "data_description": {
             "relay_entity": "Kan lämnas tomt i testläge.",
             "live_control": "AV = testläge: inga kommandon skickas till reläet.",
             "auto_off_minutes": "Samma värde som är inställt i Shellyn. Integrationen slår själv av 5 minuter före.",
-            "fallback_minutes": "Används när temperaturgivaren inte har gett något giltigt värde under tiden nedan."
+            "fallback_minutes": "Används när temperaturgivaren inte har gett något giltigt värde under tiden nedan.",
+            "notify_services": "En eller flera telefoner (notify-tjänster) som får larm för just detta uttag. Lämna tomt för att använda integrationens gemensamma mottagare. Larm visas alltid även som avisering i Home Assistant."
           }
         }
       },

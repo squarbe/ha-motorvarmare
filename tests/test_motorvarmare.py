@@ -1021,3 +1021,55 @@ async def test_reconfigure_keeps_calendar_removed_from_allowed(hass, make, cal):
         "use_start": True, "travel_before_start": 10, "start_direction": "before",
         "use_end": False, "travel_before_end": 0, "end_direction": "before"})
     assert r["type"] is FlowResultType.ABORT and r["reason"] == "reconfigure_successful"
+
+
+# ---------------- 0.6: larmmottagare per uttag ----------------
+
+async def test_alarm_goes_to_heater_recipients_not_common(hass, make, freezer):
+    anton = async_mock_service(hass, "notify", "mobile_app_anton")
+    malte = async_mock_service(hass, "notify", "mobile_app_malte")
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, notify_services=["mobile_app_anton", "mobile_app_malte"])])
+    await env.call("force_start", minutes=60)
+    await env.tick(freezer, timedelta(seconds=31))
+    assert env.s("binary_sensor.motorvarmare_1_sakerhetssparr").state == "on"
+    assert len(anton) == 1 and len(malte) == 1
+    assert len(env.notes) == 0  # gemensam mottagare används inte när uttaget har egna
+
+
+async def test_alarm_without_heater_recipients_uses_common(hass, make, freezer):
+    anton = async_mock_service(hass, "notify", "mobile_app_anton")
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, notify_services=[]),
+                           sub(SID2, "Motorvärmare 2", RELAY2, notify_services=["mobile_app_anton"])])
+    await env.call("force_start", SID, minutes=60)
+    await env.tick(freezer, timedelta(seconds=31))
+    assert len(env.notes) == 1 and len(anton) == 0
+
+
+async def test_alarm_missing_heater_recipient_skipped(hass, make, freezer):
+    from homeassistant.components import persistent_notification as pn
+    anton = async_mock_service(hass, "notify", "mobile_app_anton")
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, notify_services=["mobile_app_borta", "mobile_app_anton"])])
+    await env.call("force_start", minutes=60)
+    await env.tick(freezer, timedelta(seconds=31))
+    assert len(anton) == 1 and len(env.notes) == 0
+    assert f"motorvarmare_{SID}" in pn._async_get_or_create_notifications(hass)
+
+
+async def test_heater_flow_stores_recipients(hass, make):
+    async_mock_service(hass, "notify", "mobile_app_anton")
+    env = await make(subs=[])
+    r = await hass.config_entries.subentries.async_init((env.entry.entry_id, "uttag"), context={"source": "user"})
+    assert "notify_services" in {str(k) for k in r["data_schema"].schema}
+    base = {"name": "Motorvärmare 1", "temperature_entity": TEMP, "relay_entity": RELAY, "live_control": False,
+            "auto_off_minutes": 240, "base_minutes": 60, "minutes_per_degree": 3, "minimum_minutes": 0,
+            "maximum_minutes": 240, "fallback_minutes": 180, "temperature_cache_minutes": 30,
+            "notify_services": ["mobile_app_anton"]}
+    r = await hass.config_entries.subentries.async_configure(r["flow_id"], base)
+    assert r["type"] is FlowResultType.CREATE_ENTRY
+    sub_obj = next(iter(env.entry.subentries.values()))
+    assert sub_obj.data["notify_services"] == ["mobile_app_anton"]
+    # Omkonfigurering: ta bort mottagaren -> tom lista (gemensam används)
+    r = await env.entry.start_subentry_reconfigure_flow(hass, sub_obj.subentry_id)
+    r = await hass.config_entries.subentries.async_configure(r["flow_id"], {**base, "notify_services": []})
+    assert r["type"] is FlowResultType.ABORT
+    assert env.entry.subentries[sub_obj.subentry_id].data["notify_services"] == []

@@ -24,6 +24,7 @@ from .const import (
     CONF_CALENDAR,
     CONF_END_DIRECTION,
     CONF_FILTER,
+    CONF_HEATER_NOTIFY,
     CONF_HEATERS,
     CONF_KEYWORDS,
     CONF_START_DIRECTION,
@@ -62,8 +63,16 @@ def _num(minimum: float, maximum: float, step: float = 1, unit: str = "min") -> 
     )
 
 
-def _heater_schema(defaults: dict[str, Any]) -> vol.Schema:
+def _notify_services(hass: Any) -> list[str]:
+    return sorted(
+        s for s in hass.services.async_services_for_domain("notify")
+        if s not in ("send_message", "persistent_notification", "notify")
+    )
+
+
+def _heater_schema(defaults: dict[str, Any], notify_services: list[str]) -> vol.Schema:
     d = {**DEFAULTS, **defaults}
+    current = [s for s in d.get(CONF_HEATER_NOTIFY, []) if s in notify_services]
     relay_key = (
         vol.Optional(CONF_RELAY, description={"suggested_value": d.get(CONF_RELAY)})
     )
@@ -82,6 +91,13 @@ def _heater_schema(defaults: dict[str, Any]) -> vol.Schema:
             vol.Required(CONF_MAX, default=d[CONF_MAX]): _num(0, 360),
             vol.Required(CONF_FALLBACK, default=d[CONF_FALLBACK]): _num(0, 360),
             vol.Required(CONF_CACHE, default=d[CONF_CACHE]): _num(0, 1440),
+            vol.Optional(CONF_HEATER_NOTIFY, default=current): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[selector.SelectOptionDict(value=s, label=f"notify.{s}") for s in notify_services],
+                    multiple=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            ),
         }
     )
 
@@ -93,6 +109,7 @@ def _normalize(user_input: dict[str, Any]) -> dict[str, Any]:
     data[CONF_SLOPE] = float(data[CONF_SLOPE])
     if not data.get(CONF_RELAY):
         data.pop(CONF_RELAY, None)
+    data[CONF_HEATER_NOTIFY] = list(data.get(CONF_HEATER_NOTIFY) or [])
     return data
 
 
@@ -124,10 +141,7 @@ class MotorvarmareOptionsFlow(OptionsFlow):
             data: dict[str, Any] = {} if value == NO_NOTIFY else {CONF_NOTIFY: value}
             data[CONF_ALLOWED_CALENDARS] = list(user_input.get(CONF_ALLOWED_CALENDARS) or [])
             return self.async_create_entry(data=data)
-        services = sorted(
-            s for s in self.hass.services.async_services_for_domain("notify")
-            if s not in ("send_message", "persistent_notification", "notify")
-        )
+        services = _notify_services(self.hass)
         options = [selector.SelectOptionDict(value=NO_NOTIFY, label="Ingen (endast avisering i HA)")]
         options += [selector.SelectOptionDict(value=s, label=f"notify.{s}") for s in services]
         current = self.config_entry.options.get(CONF_NOTIFY, NO_NOTIFY)
@@ -174,7 +188,9 @@ class HeaterSubentryFlow(ConfigSubentryFlow):
                 return self.async_create_entry(title=name, data=data)
         count = sum(1 for sub in self._get_entry().subentries.values() if sub.subentry_type == SUBENTRY_TYPE)
         defaults = user_input or {"name": f"Motorvärmare {count + 1}"}
-        return self.async_show_form(step_id="user", data_schema=_heater_schema(defaults), errors=errors)
+        return self.async_show_form(
+            step_id="user", data_schema=_heater_schema(defaults, _notify_services(self.hass)), errors=errors
+        )
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         subentry = self._get_reconfigure_subentry()
@@ -186,7 +202,9 @@ class HeaterSubentryFlow(ConfigSubentryFlow):
                 name = data.pop("name")
                 return self.async_update_and_abort(self._get_entry(), subentry, title=name, data=data)
         defaults = user_input or {"name": subentry.title, **subentry.data}
-        return self.async_show_form(step_id="reconfigure", data_schema=_heater_schema(defaults), errors=errors)
+        return self.async_show_form(
+            step_id="reconfigure", data_schema=_heater_schema(defaults, _notify_services(self.hass)), errors=errors
+        )
 
 
 
