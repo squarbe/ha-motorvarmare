@@ -1073,3 +1073,158 @@ async def test_heater_flow_stores_recipients(hass, make):
     r = await hass.config_entries.subentries.async_configure(r["flow_id"], {**base, "notify_services": []})
     assert r["type"] is FlowResultType.ABORT
     assert env.entry.subentries[sub_obj.subentry_id].data["notify_services"] == []
+
+
+# ---------------- 0.7: hysteres, preliminär starttid, kalenderuppstart ----------------
+
+MIN = "sensor.motorvarmare_1_uppvarmningstid"
+NEXT = "sensor.motorvarmare_1_nasta_start"
+
+
+async def set_temp(env, value):
+    env.hass.states.async_set(TEMP, str(value))
+    await env.hass.async_block_till_done()
+
+
+async def test_hysteresis_ignores_small_oscillation(hass, make, freezer):
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False)])
+    await env.call("add_departure", departure_at=(dt_util.now() + timedelta(hours=2)).isoformat())
+    assert env.s(MIN).state == "60"
+    changes = []
+    hass.bus.async_listen("state_changed", lambda e: e.data["entity_id"] in (MIN, NEXT) and changes.append(e))
+    for t in (-0.2, 0.1, -0.4, 0.2, -0.3, 0.0, -0.45):
+        await set_temp(env, t)
+        await env.tick(freezer, timedelta(seconds=15))
+    assert env.s(MIN).state == "60" and changes == []
+    await set_temp(env, -0.6)  # 0,6 °C från beräkningstemperaturen -> räknas om
+    assert env.s(MIN).state == "62"
+    assert env.s(MIN).attributes["temperatur"] == -0.6
+
+
+async def test_hysteresis_never_starts_late(hass, make, freezer):
+    env = await make()  # 0 °C -> 60 min
+    await env.call("add_departure", departure_at=(dt_util.now() + timedelta(minutes=60, seconds=45)).isoformat())
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "off"
+    await set_temp(env, -0.4)  # under hysteresgränsen, men exakt 61 min -> ska starta nu
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+    assert len(env.on) == 1
+
+
+async def test_exact_within_15_min_before_start(hass, make, freezer):
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False)])
+    await env.call("add_departure", departure_at=(dt_util.now() + timedelta(minutes=70)).isoformat())
+    await set_temp(env, -0.3)  # 10 min före start: exakt används, 61 min
+    assert env.s(MIN).state == "61"
+
+
+async def test_preliminary_next_start_updates_rarely(hass, make, freezer):
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False)])
+    dep = dt_util.now().replace(second=0, microsecond=0) + timedelta(hours=10)
+    await env.call("add_departure", departure_at=dep.isoformat())
+    nxt = env.s(NEXT)
+    assert nxt.attributes["preliminar"] is True
+    assert dt_util.parse_datetime(nxt.state) == dep - timedelta(minutes=60)
+    rows = env.s("sensor.motorvarmare_1_avresor").attributes["trips"]
+    assert rows[0]["preliminary"] is True
+    await set_temp(env, -0.6)  # uppvärmningstid 62, men preliminär tid väntar till 15 min passerat
+    assert env.s(MIN).state == "62"
+    assert dt_util.parse_datetime(env.s(NEXT).state) == dep - timedelta(minutes=60)
+    await env.tick(freezer, timedelta(minutes=15, seconds=5))
+    assert dt_util.parse_datetime(env.s(NEXT).state) == dep - timedelta(minutes=62)
+    await set_temp(env, -1.7)  # >=1 °C från förra preliminära -> direkt
+    assert dt_util.parse_datetime(env.s(NEXT).state) == dep - timedelta(minutes=65)
+
+
+async def test_next_start_exact_within_4h(hass, make, freezer):
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False)])
+    dep = dt_util.now().replace(second=0, microsecond=0) + timedelta(hours=3)
+    await env.call("add_departure", departure_at=dep.isoformat())
+    assert env.s(NEXT).attributes["preliminar"] is False
+    await set_temp(env, -0.6)
+    assert dt_util.parse_datetime(env.s(NEXT).state) == dep - timedelta(minutes=62)
+
+
+async def test_preliminary_becomes_exact_when_crossing_4h(hass, make, freezer):
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False)])
+    dep = dt_util.now().replace(second=0, microsecond=0) + timedelta(hours=5, minutes=2)
+    await env.call("add_departure", departure_at=dep.isoformat())
+    assert env.s(NEXT).attributes["preliminar"] is True
+    await env.tick(freezer, timedelta(minutes=5))
+    assert env.s(NEXT).attributes["preliminar"] is False
+
+
+async def test_temperature_not_saved_on_small_changes(hass, make, freezer, hass_storage):
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False)])
+    await env.tick(freezer, timedelta(seconds=15))
+    saved = hass.data  # noqa: F841
+    from custom_components.motorvarmare import heater as heater_mod  # noqa: F401
+    h = env.entry.runtime_data.heaters[SID]
+    before = h.state["last_temperature_at"]
+    await set_temp(env, 0.2)
+    await set_temp(env, -0.2)
+    assert h.state["last_temperature_at"] == before and h.state["last_temperature"] == 0.0
+    await set_temp(env, 0.6)
+    assert h.state["last_temperature"] == 0.6
+
+
+async def test_calendar_waits_for_ha_started(hass, make, cal):
+    from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+    from homeassistant.core import CoreState
+    now = dt_util.now()
+    cal.add(now + timedelta(hours=5), now + timedelta(hours=6))
+    hass.set_state(CoreState.starting)
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), cal_sub(use_end=False)])
+    assert cal.calls == 0 and trips(env) == []
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+    assert cal.calls == 1 and len(trips(env)) == 1
+
+
+async def test_calendar_startup_failure_quiet_then_backoff(hass, make, cal, freezer, caplog):
+    import logging
+    caplog.set_level(logging.DEBUG, logger="custom_components.motorvarmare")
+    now = dt_util.now()
+    cal.add(now + timedelta(hours=5), now + timedelta(hours=6))
+    cal.fail = True
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), cal_sub(use_end=False)])
+    assert cal.calls == 1
+    warnings = lambda: [r for r in caplog.records if r.levelno >= logging.WARNING and "kunde inte läsa" in r.message]
+    assert warnings() == []
+    await env.tick(freezer, timedelta(seconds=31))  # första omförsöket efter 30 s
+    assert cal.calls == 2 and warnings() == []
+    cal.fail = False
+    await env.tick(freezer, timedelta(seconds=61))  # nästa efter 60 s -> lyckas
+    assert cal.calls == 3 and len(trips(env)) == 1
+    assert warnings() == []
+
+
+async def test_calendar_warns_after_grace(hass, make, cal, freezer, caplog):
+    import logging
+    cal.fail = True
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), cal_sub(use_end=False)])
+    warnings = lambda: [r for r in caplog.records if r.levelno >= logging.WARNING and "kunde inte läsa" in r.message]
+    for _ in range(20):
+        await env.tick(freezer, timedelta(minutes=1))
+    assert len(warnings()) == 1  # en gång, efter 10 min
+    for _ in range(10):
+        await env.tick(freezer, timedelta(minutes=1))
+    assert len(warnings()) == 1
+
+
+async def test_calendar_missing_service_retries(hass, make, freezer, caplog):
+    import logging
+    from homeassistant.core import SupportsResponse
+    hass.states.async_set(CAL, "off")
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False), cal_sub(use_end=False)])
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING and "kunde inte läsa" in r.message]
+    now = dt_util.now()
+    event = {"start": dt_util.as_local(now + timedelta(hours=5)).isoformat(),
+             "end": dt_util.as_local(now + timedelta(hours=6)).isoformat(), "summary": "Lämning"}
+
+    async def handler(call):
+        return {CAL: {"events": [event]}}
+
+    hass.services.async_register("calendar", "get_events", handler, supports_response=SupportsResponse.ONLY)
+    await env.tick(freezer, timedelta(seconds=31))
+    assert len(trips(env)) == 1

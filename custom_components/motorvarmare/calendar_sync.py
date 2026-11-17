@@ -21,8 +21,10 @@ import logging
 import re
 from typing import Any
 
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+from homeassistant.core import CoreState, Event, HomeAssistant, callback
 from homeassistant.helpers.event import (
+    async_call_later,
     async_track_state_change_event,
     async_track_time_interval,
 )
@@ -49,6 +51,10 @@ from .const import (
 from .heater import Heater
 
 _LOGGER = logging.getLogger(__name__)
+
+# Uppstart: kalendrar (t.ex. Google) blir ofta klara först en stund efter HA.
+STARTUP_GRACE = timedelta(minutes=10)  # misslyckad läsning loggas på debug-nivå så länge
+RETRY_DELAYS = (30, 60, 120, 240, 300)  # sekunder mellan nya försök efter misslyckad läsning
 
 
 def _event_time(value: Any) -> datetime | None:
@@ -148,6 +154,10 @@ class CalendarSource:
         self.last_error: str | None = None
         self.last_read: datetime | None = None
         self._unsubs: list[Callable[[], None]] = []
+        self._started_at: datetime = dt_util.utcnow()
+        self._attempt = 0
+        self._retry_unsub: Callable[[], None] | None = None
+        self._warned = False
 
     @property
     def calendar_entity(self) -> str:
@@ -157,17 +167,57 @@ class CalendarSource:
         return [self.heaters[h] for h in self.config.get(CONF_HEATERS, []) if h in self.heaters]
 
     async def async_start(self) -> None:
+        self._started_at = dt_util.utcnow()
         self._unsubs.append(
             async_track_state_change_event(self.hass, [self.calendar_entity], self._on_state)
         )
         self._unsubs.append(async_track_time_interval(self.hass, self._on_tick, CALENDAR_REFRESH))
-        self.hass.async_create_task(self.async_refresh())
+        if self.hass.state is CoreState.running:
+            self.hass.async_create_task(self.async_refresh())
+        else:
+            # Läs först när HA har startat helt; kalenderintegrationerna är då laddade.
+            @callback
+            def _started(_event: Event) -> None:
+                self._started_at = dt_util.utcnow()
+                self.hass.async_create_task(self.async_refresh())
+
+            self._unsubs.append(
+                self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _started)
+            )
 
     @callback
     def async_stop(self) -> None:
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
+        self._cancel_retry()
+
+    @callback
+    def _cancel_retry(self) -> None:
+        if self._retry_unsub is not None:
+            self._retry_unsub()
+            self._retry_unsub = None
+
+    @callback
+    def _failed(self, reason: str) -> None:
+        """Misslyckad läsning: behåll avresorna, logga tyst under uppstarten, försök igen med backoff."""
+        now = dt_util.utcnow()
+        if now - self._started_at < STARTUP_GRACE:
+            _LOGGER.debug("%s: %s ännu inte läsbar (%s), försöker igen", self.name, self.calendar_entity, reason)
+        elif not self._warned or self.last_error != reason:
+            _LOGGER.warning("%s: kunde inte läsa %s: %s", self.name, self.calendar_entity, reason)
+            self._warned = True
+        self.last_error = reason
+        delay = RETRY_DELAYS[min(self._attempt, len(RETRY_DELAYS) - 1)]
+        self._attempt += 1
+        self._cancel_retry()
+
+        @callback
+        def _retry(_now: datetime) -> None:
+            self._retry_unsub = None
+            self.hass.async_create_task(self.async_refresh())
+
+        self._retry_unsub = async_call_later(self.hass, delay, _retry)
 
     @callback
     def _on_state(self, event: Event) -> None:
@@ -178,6 +228,9 @@ class CalendarSource:
 
     async def async_refresh(self) -> None:
         now = dt_util.utcnow()
+        if not self.hass.services.has_service("calendar", "get_events"):
+            self._failed("tjänsten calendar.get_events finns inte ännu")
+            return
         try:
             response = await self.hass.services.async_call(
                 "calendar",
@@ -193,10 +246,13 @@ class CalendarSource:
             events = (response or {}).get(self.calendar_entity, {}).get("events", [])
         except Exception as err:  # noqa: BLE001
             # Kalendern kan vara otillgänglig (t.ex. direkt efter omstart): behåll tidigare avresor.
-            if self.last_error != str(err):
-                _LOGGER.warning("%s: kunde inte läsa %s: %s", self.name, self.calendar_entity, err)
-            self.last_error = str(err)
+            self._failed(str(err))
             return
+        if self._warned:
+            _LOGGER.info("%s: %s går att läsa igen", self.name, self.calendar_entity)
+        self._warned = False
+        self._attempt = 0
+        self._cancel_retry()
         self.last_error = None
         self.last_read = now
         departures = departures_from_events(self.source_id, self.config, events)

@@ -1,8 +1,10 @@
 # Motorvärmare
 
-Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.6.0, betatest.
+Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.7.0, betatest.
 
 Ersätter beta 0.1.0, som aldrig installerades. Den här versionen är **en** integration. Varje motorvärmaruttag läggs till som en underpost.
+
+**Nytt i 0.7.0:** lugnare beräkning. Uppvärmningstiden har hysteres på 0,5 °C, och en starttid som ligger mer än 4 timmar fram är preliminär och uppdateras högst var 15:e minut. Det ger färre uppdateringar i historiken. Kalendrar läses först när HA har startat helt, och de omförsöks tyst under uppstarten. Se avsnitt 6 och 7.
 
 **Nytt i 0.6.0:** larmmottagare per uttag. Larmet för ett uttag kan gå till en eller flera egna telefoner, t.ex. den som kör bilen. Uttag utan egna mottagare använder integrationens gemensamma.
 
@@ -85,9 +87,9 @@ Byt `?v=` i resursens URL vid uppdatering av integrationen, så att webbläsaren
 | `binary_sensor.<uttag>_varmebehov` | Värmebehov (PÅ/AV) |
 | `binary_sensor.<uttag>_sakerhetssparr` | Säkerhetsspärr, med attributen orsak och tidpunkt |
 | `sensor.<uttag>_status` | Klartextstatus |
-| `sensor.<uttag>_uppvarmningstid` | Beräknad tid i minuter, med temperaturkälla |
+| `sensor.<uttag>_uppvarmningstid` | Beräknad tid i minuter, med beräkningstemperatur och temperaturkälla |
 | `sensor.<uttag>_avresor` | Antal avresor. Attributen används av kortet och sparas inte i historiken |
-| `sensor.<uttag>_nasta_start` | Nästa planerade start |
+| `sensor.<uttag>_nasta_start` | Nästa planerade start. Attributet `preliminar` är sant när starten ligger mer än 4 h fram |
 | `button.<uttag>_kvittera_sparr` | Kvittera spärr |
 | `button.<uttag>_stoppa_forcering` | Stoppa forcerad start |
 
@@ -110,6 +112,14 @@ I testläge skickas inga kommandon. Ett undantag: om du byter från live- till t
 - När värmningen väl har startat avbryts den inte om temperaturen stiger.
 - **Ändra en pågående avresa:** flyttas den så långt fram att starttiden hamnar i framtiden planeras den om och behovet upphör tills dess. Annars fortsätter behovet.
 - **Tid utan tidszon** i tjänsteanrop tolkas som lokal tid.
+
+### Beräkning och visning av starttid
+
+- **Hysteres:** uppvärmningstiden räknas om först när utetemperaturen har ändrats minst 0,5 °C sedan förra beräkningen. Med 3 min/°C motsvarar det 1,5 min. Normal pendling i givaren ger alltså inga nya värden.
+- **Aldrig för sent:** startbeslutet använder den längsta av den exakta och den publicerade uppvärmningstiden. Hysteresen kan därför aldrig göra att uttaget startar senare än exakt beräknat.
+- **Sista 15 minuterna före start:** exakt temperatur utan hysteres, så att den visade tiden stämmer med när reläet slår till.
+- **Mer än 4 timmar före start:** starttiden är **preliminär**. Den visas exakt men uppdateras högst var 15:e minut, eller direkt om temperaturen ändrats minst 1 °C. Kortet visar "(preliminär)". Inom 4 timmar följer den beräkningen.
+- Den senast giltiga temperaturen sparas på disk först vid en ändring på minst 0,5 °C, eller var 5:e minut.
 
 ## 7. Kalenderkopplingar
 
@@ -142,6 +152,7 @@ I testläge skickas inga kommandon. Ett undantag: om du byter från live- till t
 
 - Heldagshändelser ignoreras alltid.
 - Kalendern läses var 5:e minut och när kalenderentiteten ändras, två dygn framåt. Tjänsten `motorvarmare.refresh_calendars` läser om direkt.
+- **Vid uppstart** läses kalendrarna först när HA har startat helt. Är kalendern inte klar, till exempel för att Google inte har synkat än, görs nya försök efter 30 s, 1, 2, 4 och sedan var 5:e minut. Under de första 10 minuterna loggas det bara på debug-nivå. Går kalendern fortfarande inte att läsa efter det kommer en varning, en gång per felorsak.
 - En kalenderavresa ligger kvar till 60 min efter avresetiden, precis som en manuell.
 - Överlappande avresor bryter inte varandra: när den första avresans 60 min har gått ut fortsätter en redan startad senare avresa utan avbrott.
 - Tas händelsen bort ur kalendern innan uppvärmningen har startat försvinner avresan. Har den startat fortsätter den.
@@ -150,7 +161,7 @@ I testläge skickas inga kommandon. Ett undantag: om du byter från live- till t
 - Ändras händelsens tid eller titel räknas den som en ny avresa. En tidigare överhoppning gäller då inte längre.
 - Sensorn Avresor räknar inte överhoppade avresor.
 
-## 8. Inte med i 0.4
+## 8. Inte med i 0.7
 
 - Historik över borttagna avresor
 

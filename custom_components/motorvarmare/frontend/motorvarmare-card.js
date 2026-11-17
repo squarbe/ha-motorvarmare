@@ -1,10 +1,10 @@
-/* Motorvärmare – Lovelace-kort (version 0.5). Inga externa beroenden.
+/* Motorvärmare – Lovelace-kort (version 0.7). Inga externa beroenden.
  *
  * type: custom:motorvarmare-card          -> alla uttag, nya uttag dyker upp automatiskt
  * type: custom:motorvarmare-card
  * entity: sensor.<uttag>_avresor          -> ett uttag
  */
-const MV_VERSION = "0.6.0";
+const MV_VERSION = "0.7.0";
 
 /** Alla uttagens Avresor-sensorer (de har attributet heater_id och trips), sorterade på namn. */
 function mvHeaterEntities(hass) {
@@ -209,7 +209,9 @@ class MotorvarmareCard extends HTMLElement {
           (pst && !["unknown", "unavailable"].includes(pst.state)
             ? ` · effekt ${Math.round(Number(pst.state))} ${pst.attributes.unit_of_measurement || "W"}`
             : "") +
-          (a.next_start ? ` · nästa start ${this.fmt(a.next_start)}` : ""),
+          (a.next_start
+            ? ` · nästa start ${this.fmt(a.next_start)}${a.next_start_preliminary ? " (preliminär)" : ""}`
+            : ""),
       }),
     ));
     if (a.test_mode) c.append(this.el("div", { textContent: "TESTLÄGE – uttaget påverkas inte", style: "font-size:13px;font-weight:600" }));
@@ -255,7 +257,9 @@ class MotorvarmareCard extends HTMLElement {
         const isCal = t.source === "calendar";
         const sub = t.skipped
           ? "Överhoppad – ingen uppvärmning"
-          : t.started ? `Värmebehov pågår till ${this.fmt(t.end_at, false)}` : `Planerad start ${this.fmt(t.start_at, false)}`;
+          : t.started
+            ? `Värmebehov pågår till ${this.fmt(t.end_at, false)}`
+            : `${t.preliminary ? "Preliminär start" : "Planerad start"} ${this.fmt(t.start_at, false)}`;
         const info = this.el("div", { style: t.skipped ? "opacity:.55" : "" },
           this.el("div", {
             textContent: this.fmt(t.departure_at) + (t.label ? ` – ${t.label}` : ""),

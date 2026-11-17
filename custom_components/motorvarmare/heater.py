@@ -33,6 +33,11 @@ from homeassistant.helpers.event import (
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    EXACT_WINDOW,
+    PRELIM_HORIZON,
+    PRELIM_REFRESH,
+    PRELIM_TEMP_JUMP,
+    TEMP_HYSTERESIS,
     AFTER_DEPARTURE,
     AUTO_OFF_MARGIN,
     CONF_AUTO_OFF,
@@ -138,8 +143,15 @@ class Heater:
         self._off_retry_done = False
         # Visningsvärden
         self.need = False
-        self.heating_minutes = 0
-        self.temperature: float | None = None
+        self.heating_minutes = 0  # publicerad (med hysteres)
+        self.exact_minutes = 0  # exakt, från aktuell temperatur
+        self.temperature: float | None = None  # beräkningstemperatur (med hysteres)
+        self.exact_temperature: float | None = None
+        self._calc_set = False
+        self._calc_temp: float | None = None
+        self._next_start: datetime | None = None
+        self.next_start_preliminary = False
+        self._prelim: dict[str, Any] | None = None
         self.temperature_source = "okänd"
         self.status = "Startar"
         self.device_info: Any = None  # sätts av __init__ (reläets enhet eller egen enhet)
@@ -222,7 +234,8 @@ class Heater:
             self.temperature_source = "reservtid"
             return None
         self.temperature_source = "givare"
-        if value != self.state.get("last_temperature") or self._stale_saved_temp(now):
+        last = self.state.get("last_temperature")
+        if last is None or abs(value - float(last)) >= TEMP_HYSTERESIS or self._stale_saved_temp(now):
             self.state["last_temperature"] = value
             self.state["last_temperature_at"] = now.isoformat()
             self._save()
@@ -249,6 +262,9 @@ class Heater:
             assert dep is not None
             start = dep - timedelta(minutes=self.heating_minutes)
             skipped = bool(trip.get("skipped"))
+            preliminary = not trip.get("started") and start - now > PRELIM_HORIZON
+            if preliminary and self._prelim and self._prelim["key"] == (trip["id"], trip["departure_at"]):
+                start = self._prelim["value"]  # samma värde som sensorn Nästa start
             rows.append(
                 {
                     "id": trip["id"],
@@ -259,6 +275,7 @@ class Heater:
                     "skipped": skipped,
                     "started": bool(trip.get("started")),
                     "start_at": start.isoformat(),
+                    "preliminary": preliminary,
                     "end_at": (dep + AFTER_DEPARTURE).isoformat(),
                     "active": bool(trip.get("started")) and not skipped and now < dep + AFTER_DEPARTURE,
                 }
@@ -269,10 +286,81 @@ class Heater:
         return sum(1 for t in self.state["trips"] if not t.get("skipped"))
 
     def next_start(self) -> datetime | None:
-        starts = [
-            _dt(t["start_at"]) for t in self.trip_view() if not t["started"] and not t["skipped"]
-        ]
-        return min((s for s in starts if s), default=None)
+        """Publicerad nästa start (räknas fram i _update_need)."""
+        return self._next_start
+
+    def _pending_trips(self) -> list[tuple[datetime, dict[str, Any]]]:
+        out = []
+        for trip in self.state["trips"]:
+            dep = _dt(trip["departure_at"])
+            if dep is not None and not trip.get("started") and not trip.get("skipped"):
+                out.append((dep, trip))
+        return out
+
+    def _update_minutes(self, now: datetime) -> int:
+        """Uppvärmningstid med hysteres på temperaturen.
+
+        Beräkningstemperaturen följer givaren först när den avvikit minst
+        TEMP_HYSTERESIS. Inom EXACT_WINDOW före en start används exakt temperatur.
+        Returnerar minuterna som används för startbeslut: max(exakt, publicerad),
+        så att hysteresen aldrig gör att uttaget startar senare än exakt beräknat.
+        """
+        exact_temp = self._read_temperature(now)
+        exact = self.compute_minutes(exact_temp)
+        self.exact_temperature = exact_temp
+        self.exact_minutes = exact
+        published = self.compute_minutes(self._calc_temp) if self._calc_set else exact
+        decision = max(exact, published)
+        near_start = any(
+            dep - timedelta(minutes=decision) - now <= EXACT_WINDOW
+            for dep, _trip in self._pending_trips()
+        )
+        if (
+            not self._calc_set
+            or near_start
+            or (exact_temp is None) != (self._calc_temp is None)
+            or (
+                exact_temp is not None
+                and self._calc_temp is not None
+                and abs(exact_temp - self._calc_temp) >= TEMP_HYSTERESIS
+            )
+        ):
+            self._calc_set = True
+            self._calc_temp = exact_temp
+            published = exact
+        self.temperature = self._calc_temp
+        self.heating_minutes = published
+        return max(exact, published)
+
+    def _update_next_start(self, now: datetime) -> None:
+        """Nästa start. Mer än PRELIM_HORIZON fram är den preliminär och uppdateras sällan."""
+        pending = self._pending_trips()
+        if not pending:
+            self._next_start = None
+            self.next_start_preliminary = False
+            self._prelim = None
+            return
+        dep, trip = min(pending, key=lambda p: p[0])
+        start = dep - timedelta(minutes=self.heating_minutes)
+        if start - now <= PRELIM_HORIZON:
+            self._next_start = start
+            self.next_start_preliminary = False
+            self._prelim = None
+            return
+        key = (trip["id"], trip["departure_at"])
+        p = self._prelim
+        temp_jump = p is not None and (
+            (p["temp"] is None) != (self._calc_temp is None)
+            or (
+                p["temp"] is not None
+                and self._calc_temp is not None
+                and abs(p["temp"] - self._calc_temp) >= PRELIM_TEMP_JUMP
+            )
+        )
+        if p is None or p["key"] != key or now - p["at"] >= PRELIM_REFRESH or temp_jump:
+            self._prelim = {"key": key, "at": now, "temp": self._calc_temp, "value": start}
+        self._next_start = self._prelim["value"]
+        self.next_start_preliminary = True
 
     async def async_add_departure(self, when: datetime, label: str = "") -> str:
         if when + AFTER_DEPARTURE <= dt_util.utcnow():
@@ -438,8 +526,7 @@ class Heater:
             listener()
 
     def _update_need(self, now: datetime) -> None:
-        self.temperature = self._read_temperature(now)
-        self.heating_minutes = self.compute_minutes(self.temperature)
+        start_minutes = self._update_minutes(now)
         remaining = []
         changed = False
         active = False
@@ -451,7 +538,7 @@ class Heater:
             if trip.get("skipped"):
                 remaining.append(trip)
                 continue
-            if not trip.get("started") and now >= dep - timedelta(minutes=self.heating_minutes):
+            if not trip.get("started") and now >= dep - timedelta(minutes=start_minutes):
                 trip["started"] = True  # låses: temperaturökning avbryter inte
                 changed = True
             active = active or bool(trip.get("started"))
@@ -462,6 +549,7 @@ class Heater:
             self.state["force_until"] = None
             force_until = None
             changed = True
+        self._update_next_start(now)
         self.need = active or force_until is not None
         if not self.need and self.relay["inhibited"]:
             self.relay["inhibited"] = False  # behovsperioden är slut
@@ -670,6 +758,7 @@ class Heater:
             "temperature": self.temperature,
             "temperature_source": self.temperature_source,
             "next_start": _iso(self.next_start()),
+            "next_start_preliminary": self.next_start_preliminary,
             "force_until": self.state.get("force_until"),
             "trips": self.trip_view(),
             "relay_entity": self.relay_entity,

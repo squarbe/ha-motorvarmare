@@ -71,6 +71,13 @@ RELAY_CONFIRM = timedelta(seconds=30)  # tid för relä att bekräfta PÅ, och s
 UNAVAILABLE_WARN = timedelta(minutes=2)  # relä otillgängligt under behov -> varning
 AUTO_OFF_MARGIN = timedelta(minutes=5)  # integrationen slår själv av så här länge före Shellyns Auto Off
 TICK = timedelta(seconds=15)
+
+# Beräkning av uppvärmningstid och starttid (0.7)
+TEMP_HYSTERESIS = 0.5  # °C: uppvärmningstiden räknas om först när temperaturen ändrats minst så mycket
+EXACT_WINDOW = timedelta(minutes=15)  # närmare start än så används exakt temperatur (ingen hysteres)
+PRELIM_HORIZON = timedelta(hours=4)  # längre fram än så är starttiden preliminär
+PRELIM_REFRESH = timedelta(minutes=15)  # preliminär starttid uppdateras högst så här ofta ...
+PRELIM_TEMP_JUMP = 1.0  # ... eller direkt vid så stor temperaturändring (°C)
 TEMP_VALID = (-60.0, 60.0)
 FORCE_CHOICES = (15, 30, 60, 120, 240)
 CALENDAR_REFRESH = timedelta(minutes=5)  # kalendern läses om så här ofta (och vid ändring)

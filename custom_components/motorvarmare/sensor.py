@@ -40,7 +40,7 @@ class MinutesSensor(HeaterEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         return {
-            "temperatur": self.heater.temperature,
+            "temperatur": self.heater.temperature,  # beräkningstemperatur (med hysteres)
             "temperaturkalla": self.heater.temperature_source,
         }
 
@@ -53,7 +53,8 @@ class DeparturesSensor(HeaterEntity, SensorEntity):
         {
             "trips", "heater_id", "test_mode", "status", "need", "fault", "fault_reason",
             "fault_at", "inhibited", "inhibit_reason", "heating_minutes", "temperature",
-            "temperature_source", "next_start", "force_until", "relay_entity",
+            "temperature_source", "next_start", "next_start_preliminary", "force_until",
+            "relay_entity",
         }
     )
 
@@ -73,3 +74,7 @@ class NextStartSensor(HeaterEntity, SensorEntity):
     def native_value(self):
         value = self.heater.next_start()
         return dt_util.as_local(value) if value else None
+
+    @property
+    def extra_state_attributes(self):
+        return {"preliminar": self.heater.next_start_preliminary}
