@@ -1,8 +1,10 @@
 # Motorvärmare
 
-Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.7.0, betatest.
+Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.7.1, betatest.
 
 Ersätter beta 0.1.0, som aldrig installerades. Den här versionen är **en** integration. Varje motorvärmaruttag läggs till som en underpost.
+
+**Nytt i 0.7.1:** de sista 15 minuterna före start får uppvärmningstiden bara öka. Starttiden kan alltså flyttas tidigare men aldrig senare, och pendling kring en minutgräns ger inte längre växlande värden.
 
 **Nytt i 0.7.0:** lugnare beräkning. Uppvärmningstiden har hysteres på 0,5 °C, och en starttid som ligger mer än 4 timmar fram är preliminär och uppdateras högst var 15:e minut. Det ger färre uppdateringar i historiken. Kalendrar läses först när HA har startat helt, och de omförsöks tyst under uppstarten. Se avsnitt 6 och 7.
 
@@ -117,7 +119,7 @@ I testläge skickas inga kommandon. Ett undantag: om du byter från live- till t
 
 - **Hysteres:** uppvärmningstiden räknas om först när utetemperaturen har ändrats minst 0,5 °C sedan förra beräkningen. Med 3 min/°C motsvarar det 1,5 min. Normal pendling i givaren ger alltså inga nya värden.
 - **Aldrig för sent:** startbeslutet använder den längsta av den exakta och den publicerade uppvärmningstiden. Hysteresen kan därför aldrig göra att uttaget startar senare än exakt beräknat.
-- **Sista 15 minuterna före start:** exakt temperatur utan hysteres, så att den visade tiden stämmer med när reläet slår till.
+- **Sista 15 minuterna före start:** uppvärmningstiden får bara öka. Blir det kallare flyttas starten tidigare direkt. Blir det varmare ligger den kvar. Uttaget startar aldrig senare än exakt beräknat, men kan starta upp till cirka 1 min tidigare. Den visade tiden stämmer med när reläet slår till.
 - **Mer än 4 timmar före start:** starttiden är **preliminär**. Den visas exakt men uppdateras högst var 15:e minut, eller direkt om temperaturen ändrats minst 1 °C. Kortet visar "(preliminär)". Inom 4 timmar följer den beräkningen.
 - Den senast giltiga temperaturen sparas på disk först vid en ändring på minst 0,5 °C, eller var 5:e minut.
 

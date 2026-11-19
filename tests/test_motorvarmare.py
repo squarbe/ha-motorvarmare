@@ -1228,3 +1228,30 @@ async def test_calendar_missing_service_retries(hass, make, freezer, caplog):
     hass.services.async_register("calendar", "get_events", handler, supports_response=SupportsResponse.ONLY)
     await env.tick(freezer, timedelta(seconds=31))
     assert len(trips(env)) == 1
+
+
+# ---------------- 0.7.1: sista 15 min får uppvärmningstiden bara öka ----------------
+
+async def test_final_window_minutes_only_increase(hass, make, freezer):
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False)], temp="-4.4")  # 73,2 -> 73
+    dep = dt_util.now().replace(second=0, microsecond=0) + timedelta(minutes=73 + 14)
+    await env.call("add_departure", departure_at=dep.isoformat())
+    assert env.s(MIN).state == "73"
+    values = []
+    hass.bus.async_listen("state_changed", lambda e: e.data["entity_id"] == MIN and values.append(e.data["new_state"].state))
+    for t in (-4.5, -4.25, -4.5, -4.38, -4.56, -4.31, -4.44, -4.5, -4.25):
+        await set_temp(env, t)
+        await env.tick(freezer, timedelta(seconds=20))
+    assert values == ["74"]  # en enda ändring, uppåt (−4,5 -> 73,5 -> 74)
+    assert dt_util.parse_datetime(env.s(NEXT).state) == dep - timedelta(minutes=74)
+
+
+async def test_final_window_never_late_and_releases_after_start(hass, make, freezer):
+    env = await make(temp="-4.4")  # 73 min
+    dep = dt_util.now().replace(second=0, microsecond=0) + timedelta(minutes=73 + 5)
+    await env.call("add_departure", departure_at=dep.isoformat())
+    await set_temp(env, -6.0)  # 78 min -> starta nu
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+    await set_temp(env, -4.4)  # efter start: spärren släpps, hysteresen gäller igen
+    await env.tick(freezer, timedelta(seconds=15))
+    assert env.s(MIN).state == "73"

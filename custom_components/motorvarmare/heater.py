@@ -149,6 +149,7 @@ class Heater:
         self.exact_temperature: float | None = None
         self._calc_set = False
         self._calc_temp: float | None = None
+        self._latch: int | None = None  # sista 15 min före start: uppvärmningstid som bara får öka
         self._next_start: datetime | None = None
         self.next_start_preliminary = False
         self._prelim: dict[str, Any] | None = None
@@ -301,23 +302,37 @@ class Heater:
         """Uppvärmningstid med hysteres på temperaturen.
 
         Beräkningstemperaturen följer givaren först när den avvikit minst
-        TEMP_HYSTERESIS. Inom EXACT_WINDOW före en start används exakt temperatur.
+        TEMP_HYSTERESIS. Inom EXACT_WINDOW före en start får uppvärmningstiden bara
+        öka (starttiden kan flyttas tidigare men aldrig senare), så att pendling kring
+        en minutgräns inte ger växlande värden.
         Returnerar minuterna som används för startbeslut: max(exakt, publicerad),
-        så att hysteresen aldrig gör att uttaget startar senare än exakt beräknat.
+        så att uttaget aldrig startar senare än exakt beräknat.
         """
         exact_temp = self._read_temperature(now)
         exact = self.compute_minutes(exact_temp)
         self.exact_temperature = exact_temp
         self.exact_minutes = exact
         published = self.compute_minutes(self._calc_temp) if self._calc_set else exact
+        if self._latch is not None:
+            published = max(published, self._latch)
         decision = max(exact, published)
         near_start = any(
             dep - timedelta(minutes=decision) - now <= EXACT_WINDOW
             for dep, _trip in self._pending_trips()
         )
+        if near_start:
+            if self._latch is None or decision > self._latch:
+                if exact > published or not self._calc_set:
+                    self._calc_set = True
+                    self._calc_temp = exact_temp
+                self._latch = decision
+            self.temperature = self._calc_temp
+            self.heating_minutes = self._latch
+            return self._latch
+        self._latch = None
+        published = self.compute_minutes(self._calc_temp) if self._calc_set else exact
         if (
             not self._calc_set
-            or near_start
             or (exact_temp is None) != (self._calc_temp is None)
             or (
                 exact_temp is not None
