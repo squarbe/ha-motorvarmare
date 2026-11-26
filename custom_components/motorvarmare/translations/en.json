@@ -2,12 +2,12 @@
   "config": {
     "step": {
       "user": {
-        "title": "Motorvärmare",
-        "description": "Skapar integrationen. Därefter lägger du till ett eller flera uttag med knappen \"Lägg till motorvärmaruttag\"."
+        "title": "Engine heater",
+        "description": "Creates the integration. Then add one or more outlets with the button \"Add engine heater outlet\"."
       }
     },
     "abort": {
-      "single_instance_allowed": "Integrationen finns redan. Lägg till fler uttag i den befintliga integrationen."
+      "single_instance_allowed": "The integration already exists. Add more outlets to the existing integration."
     }
   },
   "options": {
@@ -27,68 +27,68 @@
   },
   "config_subentries": {
     "uttag": {
-      "entry_type": "Motorvärmaruttag",
+      "entry_type": "Engine heater outlet",
       "initiate_flow": {
-        "user": "Lägg till motorvärmaruttag"
+        "user": "Add engine heater outlet"
       },
       "step": {
         "user": {
-          "title": "Nytt motorvärmaruttag",
+          "title": "New engine heater outlet",
           "data": {
-            "name": "Namn",
-            "temperature_entity": "Utomhustemperatur",
-            "relay_entity": "Relä (Shelly)",
-            "live_control": "Styr reläet på riktigt",
-            "auto_off_minutes": "Shellyns Auto Off",
-            "base_minutes": "Uppvärmningstid vid 0 °C",
-            "minutes_per_degree": "Extra minuter per grad kallare",
-            "minimum_minutes": "Kortaste uppvärmningstid",
-            "maximum_minutes": "Längsta uppvärmningstid",
-            "fallback_minutes": "Reservtid utan temperatur",
-            "temperature_cache_minutes": "Använd senaste giltiga temperatur i",
+            "name": "Name",
+            "temperature_entity": "Outdoor temperature",
+            "relay_entity": "Relay (Shelly)",
+            "live_control": "Control the relay for real",
+            "auto_off_minutes": "Shelly Auto Off",
+            "base_minutes": "Heating time at 0 °C",
+            "minutes_per_degree": "Extra minutes per degree colder",
+            "minimum_minutes": "Shortest heating time",
+            "maximum_minutes": "Longest heating time",
+            "fallback_minutes": "Fallback time without temperature",
+            "temperature_cache_minutes": "Use last valid temperature for",
             "notify_services": "Send alarms to"
           },
           "data_description": {
-            "relay_entity": "Kan lämnas tomt i testläge.",
-            "live_control": "AV = testläge: inga kommandon skickas till reläet.",
-            "auto_off_minutes": "Samma värde som är inställt i Shellyn. Integrationen slår själv av 5 minuter före.",
-            "fallback_minutes": "Används när temperaturgivaren inte har gett något giltigt värde under tiden nedan.",
+            "relay_entity": "May be left empty in test mode.",
+            "live_control": "OFF = test mode: no commands are sent to the relay.",
+            "auto_off_minutes": "Same value as set in the Shelly. The integration switches off by itself 5 minutes before.",
+            "fallback_minutes": "Used when the temperature sensor has not given a valid value during the time below.",
             "notify_services": "One or more phones (notify services) that receive alarms for this outlet. Leave empty to use the integration's common recipient. Alarms always also appear as a Home Assistant notification."
           }
         },
         "reconfigure": {
-          "title": "Ändra motorvärmaruttag",
+          "title": "Edit engine heater outlet",
           "data": {
-            "name": "Namn",
-            "temperature_entity": "Utomhustemperatur",
-            "relay_entity": "Relä (Shelly)",
-            "live_control": "Styr reläet på riktigt",
-            "auto_off_minutes": "Shellyns Auto Off",
-            "base_minutes": "Uppvärmningstid vid 0 °C",
-            "minutes_per_degree": "Extra minuter per grad kallare",
-            "minimum_minutes": "Kortaste uppvärmningstid",
-            "maximum_minutes": "Längsta uppvärmningstid",
-            "fallback_minutes": "Reservtid utan temperatur",
-            "temperature_cache_minutes": "Använd senaste giltiga temperatur i",
+            "name": "Name",
+            "temperature_entity": "Outdoor temperature",
+            "relay_entity": "Relay (Shelly)",
+            "live_control": "Control the relay for real",
+            "auto_off_minutes": "Shelly Auto Off",
+            "base_minutes": "Heating time at 0 °C",
+            "minutes_per_degree": "Extra minutes per degree colder",
+            "minimum_minutes": "Shortest heating time",
+            "maximum_minutes": "Longest heating time",
+            "fallback_minutes": "Fallback time without temperature",
+            "temperature_cache_minutes": "Use last valid temperature for",
             "notify_services": "Send alarms to"
           },
           "data_description": {
-            "relay_entity": "Kan lämnas tomt i testläge.",
-            "live_control": "AV = testläge: inga kommandon skickas till reläet.",
-            "auto_off_minutes": "Samma värde som är inställt i Shellyn. Integrationen slår själv av 5 minuter före.",
-            "fallback_minutes": "Används när temperaturgivaren inte har gett något giltigt värde under tiden nedan.",
+            "relay_entity": "May be left empty in test mode.",
+            "live_control": "OFF = test mode: no commands are sent to the relay.",
+            "auto_off_minutes": "Same value as set in the Shelly. The integration switches off by itself 5 minutes before.",
+            "fallback_minutes": "Used when the temperature sensor has not given a valid value during the time below.",
             "notify_services": "One or more phones (notify services) that receive alarms for this outlet. Leave empty to use the integration's common recipient. Alarms always also appear as a Home Assistant notification."
           }
         }
       },
       "error": {
-        "min_over_max": "Kortaste tiden får inte vara längre än längsta tiden.",
-        "live_needs_relay": "Välj ett relä för att kunna styra på riktigt.",
-        "relay_in_use": "Reläet används redan av ett annat uttag.",
-        "auto_off_too_short": "Auto Off måste vara minst 15 minuter."
+        "min_over_max": "The shortest time must not be longer than the longest time.",
+        "live_needs_relay": "Select a relay to control it for real.",
+        "relay_in_use": "The relay is already used by another outlet.",
+        "auto_off_too_short": "Auto Off must be at least 15 minutes."
       },
       "abort": {
-        "reconfigure_successful": "Uttaget är uppdaterat."
+        "reconfigure_successful": "The outlet has been updated."
       }
     },
     "kalender": {
@@ -163,90 +163,90 @@
   },
   "services": {
     "add_departure": {
-      "name": "Lägg till avresa",
-      "description": "Registrerar en manuell avresa för ett uttag.",
+      "name": "Add departure",
+      "description": "Registers a manual departure for an outlet.",
       "fields": {
         "heater_id": {
-          "name": "Uttag (id)",
-          "description": "Uttagets id, finns som attribut heater_id på sensorn Avresor."
+          "name": "Outlet (id)",
+          "description": "Outlet id, available as attribute heater_id on the Departures sensor."
         },
         "departure_at": {
-          "name": "Avresetid",
-          "description": "Tid utan tidszon tolkas som lokal tid."
+          "name": "Departure time",
+          "description": "A time without time zone is read as local time."
         },
         "label": {
-          "name": "Etikett",
-          "description": "Valfri text."
+          "name": "Label",
+          "description": "Optional text."
         }
       }
     },
     "edit_departure": {
-      "name": "Ändra avresa",
-      "description": "Ändrar tid eller etikett för en avresa.",
+      "name": "Edit departure",
+      "description": "Changes the time or label of a departure.",
       "fields": {
         "heater_id": {
-          "name": "Uttag (id)",
-          "description": "Uttagets id."
+          "name": "Outlet (id)",
+          "description": "Outlet id."
         },
         "trip_id": {
-          "name": "Avrese-id",
-          "description": "Avresans id."
+          "name": "Departure id",
+          "description": "Departure id."
         },
         "departure_at": {
-          "name": "Ny avresetid",
-          "description": "Tid utan tidszon tolkas som lokal tid."
+          "name": "New departure time",
+          "description": "A time without time zone is read as local time."
         },
         "label": {
-          "name": "Etikett",
-          "description": "Valfri text."
+          "name": "Label",
+          "description": "Optional text."
         }
       }
     },
     "remove_departure": {
-      "name": "Ta bort avresa",
-      "description": "Tar bort en avresa.",
+      "name": "Remove departure",
+      "description": "Removes a departure.",
       "fields": {
         "heater_id": {
-          "name": "Uttag (id)",
-          "description": "Uttagets id."
+          "name": "Outlet (id)",
+          "description": "Outlet id."
         },
         "trip_id": {
-          "name": "Avrese-id",
-          "description": "Avresans id."
+          "name": "Departure id",
+          "description": "Departure id."
         }
       }
     },
     "force_start": {
-      "name": "Forcerad start",
-      "description": "Värmer i angivet antal minuter (max 240).",
+      "name": "Forced start",
+      "description": "Heats for the given number of minutes (max 240).",
       "fields": {
         "heater_id": {
-          "name": "Uttag (id)",
-          "description": "Uttagets id."
+          "name": "Outlet (id)",
+          "description": "Outlet id."
         },
         "minutes": {
-          "name": "Minuter",
-          "description": "15–240 minuter."
+          "name": "Minutes",
+          "description": "15–240 minutes."
         }
       }
     },
     "stop_force": {
-      "name": "Stoppa forcering",
-      "description": "Avbryter en forcerad start.",
+      "name": "Stop forced start",
+      "description": "Cancels a forced start.",
       "fields": {
         "heater_id": {
-          "name": "Uttag (id)",
-          "description": "Uttagets id."
+          "name": "Outlet (id)",
+          "description": "Outlet id."
         }
       }
     },
     "acknowledge_fault": {
-      "name": "Kvittera säkerhetsspärr",
-      "description": "Kvitterar spärren. Startar inte reläet; det sker vid nästa behovsperiod eller vid forcerad start.",
+      "name": "Acknowledge safety lock",
+      "description": "Acknowledges the lock. Does not start the relay; that happens at the next heating period or a forced start.",
       "fields": {
         "heater_id": {
-          "name": "Uttag (id)",
-          "description": "Uttagets id."
+          "name": "Outlet (id)",
+          "description": "Outlet id."
         }
       }
     },
@@ -283,12 +283,12 @@
       "description": "Re-reads all linked calendars now."
     },
     "stop_heating": {
-      "name": "Stoppa uppvärmning",
-      "description": "Avslutar pågående värmning nu: pågående kalenderavresor hoppas över, pågående manuella avresor tas bort och forcering avbryts. Kommande avresor påverkas inte.",
+      "name": "Stop heating",
+      "description": "Ends the current heating now: ongoing calendar departures are skipped, ongoing manual departures are removed and a forced start is cancelled. Upcoming departures are not affected.",
       "fields": {
         "heater_id": {
-          "name": "Uttag (id)",
-          "description": "Uttagets id."
+          "name": "Outlet (id)",
+          "description": "Outlet id."
         }
       }
     }
