@@ -281,6 +281,16 @@
     "refresh_calendars": {
       "name": "Refresh calendars",
       "description": "Re-reads all linked calendars now."
+    },
+    "stop_heating": {
+      "name": "Stoppa uppvärmning",
+      "description": "Avslutar pågående värmning nu: pågående kalenderavresor hoppas över, pågående manuella avresor tas bort och forcering avbryts. Kommande avresor påverkas inte.",
+      "fields": {
+        "heater_id": {
+          "name": "Uttag (id)",
+          "description": "Uttagets id."
+        }
+      }
     }
   },
   "selector": {

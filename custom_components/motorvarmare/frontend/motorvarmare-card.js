@@ -4,7 +4,7 @@
  * type: custom:motorvarmare-card
  * entity: sensor.<uttag>_avresor          -> ett uttag
  */
-const MV_VERSION = "0.7.1";
+const MV_VERSION = "0.7.2";
 
 /** Alla uttagens Avresor-sensorer (de har attributet heater_id och trips), sorterade på namn. */
 function mvHeaterEntities(hass) {
@@ -215,6 +215,13 @@ class MotorvarmareCard extends HTMLElement {
       }),
     ));
     if (a.test_mode) c.append(this.el("div", { textContent: "TESTLÄGE – uttaget påverkas inte", style: "font-size:13px;font-weight:600" }));
+
+    // Stoppa pågående värmning
+    if (a.need) {
+      c.append(this.el("div", { style: "display:flex;gap:8px;align-items:center;flex-wrap:wrap" },
+        this.button("Stoppa uppvärmning nu", () => call("stop_heating", {}), true),
+        this.el("span", { textContent: "Kommande avresor påverkas inte", style: "font-size:13px;opacity:.75" })));
+    }
 
     if (a.fault) {
       c.append(this.el("div", { style: "display:grid;gap:8px;padding:10px;border-radius:8px;border:1px solid var(--error-color)" },

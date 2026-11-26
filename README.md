@@ -1,8 +1,10 @@
 # Motorvärmare
 
-Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.7.1, betatest.
+Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.7.2, betatest.
 
 Ersätter beta 0.1.0, som aldrig installerades. Den här versionen är **en** integration. Varje motorvärmaruttag läggs till som en underpost.
+
+**Nytt i 0.7.2:** knappen **Stoppa uppvärmning nu** på kortet (visas när det finns värmebehov), knappen `button.<uttag>_stoppa_uppvarmning` och tjänsten `motorvarmare.stop_heating`. Pågående kalenderavresor hoppas över (kan återställas), pågående manuella avresor tas bort och forcering avbryts. Kommande avresor påverkas inte. Reläet slås av som ett vanligt frånslag, utan säkerhetsspärr. Att slå av Shelly-reläet direkt ger fortfarande spärr.
 
 **Nytt i 0.7.1:** de sista 15 minuterna före start får uppvärmningstiden bara öka. Starttiden kan alltså flyttas tidigare men aldrig senare, och pendling kring en minutgräns ger inte längre växlande värden.
 
@@ -94,6 +96,7 @@ Byt `?v=` i resursens URL vid uppdatering av integrationen, så att webbläsaren
 | `sensor.<uttag>_nasta_start` | Nästa planerade start. Attributet `preliminar` är sant när starten ligger mer än 4 h fram |
 | `button.<uttag>_kvittera_sparr` | Kvittera spärr |
 | `button.<uttag>_stoppa_forcering` | Stoppa forcerad start |
+| `button.<uttag>_stoppa_uppvarmning` | Stoppa pågående värmning nu (kommande avresor påverkas inte) |
 
 Ingen entitet har `state_class`, så inget hamnar i långtidsstatistiken.
 

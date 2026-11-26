@@ -1,4 +1,4 @@
-"""Knappar: kvittera säkerhetsspärr, stoppa forcering."""
+"""Knappar: kvittera säkerhetsspärr, stoppa forcering, stoppa uppvärmning."""
 from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
@@ -12,6 +12,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
             [
                 AckButton(heater, "acknowledge", "Kvittera spärr"),
                 StopForceButton(heater, "stop_force", "Stoppa forcering"),
+                StopHeatingButton(heater, "stop_heating", "Stoppa uppvärmning"),
             ],
             config_subentry_id=heater_id,
         )
@@ -29,3 +30,10 @@ class StopForceButton(HeaterEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         await self.heater.async_stop_force()
+
+
+class StopHeatingButton(HeaterEntity, ButtonEntity):
+    _attr_icon = "mdi:power-plug-off"
+
+    async def async_press(self) -> None:
+        await self.heater.async_stop_heating()

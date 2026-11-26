@@ -57,6 +57,12 @@ stop_force:
       required: true
       selector:
         text:
+stop_heating:
+  fields:
+    heater_id:
+      required: true
+      selector:
+        text:
 acknowledge_fault:
   fields:
     heater_id:

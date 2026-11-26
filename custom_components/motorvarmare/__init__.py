@@ -257,6 +257,9 @@ def _register_services(hass: HomeAssistant) -> None:
     async def stop_force(call: ServiceCall) -> None:
         await _heater(hass, call).async_stop_force()
 
+    async def stop_heating(call: ServiceCall) -> None:
+        await _heater(hass, call).async_stop_heating()
+
     async def acknowledge(call: ServiceCall) -> None:
         await _heater(hass, call).async_acknowledge()
 
@@ -304,4 +307,5 @@ def _register_services(hass: HomeAssistant) -> None:
         ),
     )
     hass.services.async_register(DOMAIN, "stop_force", stop_force, schema=vol.Schema(base))
+    hass.services.async_register(DOMAIN, "stop_heating", stop_heating, schema=vol.Schema(base))
     hass.services.async_register(DOMAIN, "acknowledge_fault", acknowledge, schema=vol.Schema(base))

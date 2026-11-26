@@ -510,6 +510,26 @@ class Heater:
         self._save()
         await self.async_reconcile()
 
+    async def async_stop_heating(self) -> None:
+        """Avsluta pågående värmning nu.
+
+        Pågående kalenderavresor hoppas över (kan återställas), pågående manuella
+        avresor tas bort och en forcering avbryts. Avresor som ännu inte startat
+        påverkas inte. Reläet slås av som ett vanligt, beordrat frånslag (ingen spärr).
+        """
+        kept = []
+        for trip in self.state["trips"]:
+            if trip.get("started") and not trip.get("skipped"):
+                if trip.get("source"):  # kalenderavresa (source = kalenderkopplingens id)
+                    trip["skipped"] = True
+                else:
+                    continue  # manuell pågående avresa tas bort
+            kept.append(trip)
+        self.state["trips"] = kept
+        self.state["force_until"] = None
+        self._save()
+        await self.async_reconcile()
+
     async def async_acknowledge(self) -> None:
         relay = self.relay
         was_fault = relay["fault"]

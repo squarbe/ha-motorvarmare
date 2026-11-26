@@ -557,7 +557,7 @@ async def test_entities_attached_to_relay_device(hass, make):
     env = await make()
     from homeassistant.helpers import device_registry as dr
     ents = _our_entities(hass, env.entry)
-    assert len(ents) == 8
+    assert len(ents) == 9
     assert {e.device_id for e in ents} == {dev.id}
     assert not [d for d in dr.async_entries_for_config_entry(dr.async_get(hass), env.entry.entry_id)
                 if (DOMAIN, SID) in d.identifiers]
@@ -1255,3 +1255,50 @@ async def test_final_window_never_late_and_releases_after_start(hass, make, free
     await set_temp(env, -4.4)  # efter start: spärren släpps, hysteresen gäller igen
     await env.tick(freezer, timedelta(seconds=15))
     assert env.s(MIN).state == "73"
+
+
+# ---------------- stoppa uppvärmning (0.7.2) ----------------
+
+async def test_stop_heating_manual_trip_and_force_no_fault(hass, make, freezer):
+    env = await make()
+    later = (dt_util.now() + timedelta(hours=6)).isoformat()
+    await env.call("add_departure", departure_at=(dt_util.now() + timedelta(minutes=30)).isoformat())
+    await env.call("add_departure", departure_at=later)
+    await env.call("force_start", minutes=120)
+    await env.relay("on")
+    await env.call("stop_heating")
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "off"
+    assert len(env.off) == 1
+    await env.relay("off")
+    await env.tick(freezer, timedelta(minutes=2))
+    assert env.s("binary_sensor.motorvarmare_1_sakerhetssparr").state == "off"
+    rows = trips(env)
+    assert len(rows) == 1 and not rows[0]["started"]  # kommande avresa kvar
+    assert env.s("sensor.motorvarmare_1_avresor").attributes["force_until"] is None
+    assert len(env.on) == 1 and not env.notes
+
+
+async def test_stop_heating_calendar_trip_is_skipped_not_removed(hass, make, cal):
+    now = dt_util.now()
+    cal.add(now + timedelta(minutes=30), now + timedelta(hours=6))
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY), cal_sub()])
+    await env.relay("on")
+    await hass.services.async_call("button", "press", {"entity_id": "button.motorvarmare_1_stoppa_uppvarmning"}, blocking=True)
+    await hass.async_block_till_done()
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "off"
+    rows = trips(env)
+    assert rows[0]["skipped"] is True  # pågående: överhoppad, kan återställas
+    assert rows[1]["skipped"] is False  # slutavresan senare samma dag påverkas inte
+    await refresh(env)
+    assert trips(env)[0]["skipped"] is True
+
+
+async def test_stop_heating_while_inhibited_after_ack(hass, make, freezer):
+    env = await make()
+    await env.call("add_departure", departure_at=(dt_util.now() + timedelta(minutes=30)).isoformat())
+    await env.tick(freezer, timedelta(seconds=31))  # reläet slog aldrig till -> spärr
+    await env.call("acknowledge_fault")
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+    await env.call("stop_heating")
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "off"
+    assert env.s("sensor.motorvarmare_1_status").state == "Viloläge"
