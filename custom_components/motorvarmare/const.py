@@ -20,6 +20,7 @@ CONF_MIN = "minimum_minutes"
 CONF_MAX = "maximum_minutes"
 CONF_FALLBACK = "fallback_minutes"
 CONF_CACHE = "temperature_cache_minutes"
+CONF_AFTER = "after_departure_minutes"  # värmen fortsätter (och avresan ligger kvar) så här länge efter avresa
 CONF_HEATER_NOTIFY = "notify_services"  # larmmottagare för just detta uttag; tom = integrationens gemensamma
 
 DEFAULTS = {
@@ -31,6 +32,7 @@ DEFAULTS = {
     CONF_MAX: 240,
     CONF_FALLBACK: 180,
     CONF_CACHE: 30,
+    CONF_AFTER: 60,
 }
 
 # Konfiguration per kalenderkoppling (subentry data)
@@ -66,7 +68,6 @@ CONF_NOTIFY = "notify_service"
 CONF_ALLOWED_CALENDARS = "allowed_calendars"  # tom lista = alla kalendrar
 
 # Fasta beslut
-AFTER_DEPARTURE = timedelta(minutes=60)  # behov kvar till avresa + 60 min (beslut)
 RELAY_CONFIRM = timedelta(seconds=30)  # tid för relä att bekräfta PÅ, och sammanhängande AV-tid före spärr
 UNAVAILABLE_WARN = timedelta(minutes=2)  # relä otillgängligt under behov -> varning
 AUTO_OFF_MARGIN = timedelta(minutes=5)  # integrationen slår själv av så här länge före Shellyns Auto Off

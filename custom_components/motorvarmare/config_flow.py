@@ -20,6 +20,7 @@ from .const import (
     CALENDAR_DEFAULTS,
     CALENDAR_SUBENTRY_TYPE,
     CONF_ALLOWED_CALENDARS,
+    CONF_AFTER,
     CONF_AUTO_OFF,
     CONF_CALENDAR,
     CONF_END_DIRECTION,
@@ -89,6 +90,7 @@ def _heater_schema(defaults: dict[str, Any], notify_services: list[str]) -> vol.
             vol.Required(CONF_SLOPE, default=d[CONF_SLOPE]): _num(0, 20, 0.1, "min/°C"),
             vol.Required(CONF_MIN, default=d[CONF_MIN]): _num(0, 360),
             vol.Required(CONF_MAX, default=d[CONF_MAX]): _num(0, 360),
+            vol.Required(CONF_AFTER, default=d[CONF_AFTER]): _num(0, 120),
             vol.Required(CONF_FALLBACK, default=d[CONF_FALLBACK]): _num(0, 360),
             vol.Required(CONF_CACHE, default=d[CONF_CACHE]): _num(0, 1440),
             vol.Optional(CONF_HEATER_NOTIFY, default=current): selector.SelectSelector(
@@ -104,7 +106,7 @@ def _heater_schema(defaults: dict[str, Any], notify_services: list[str]) -> vol.
 
 def _normalize(user_input: dict[str, Any]) -> dict[str, Any]:
     data = dict(user_input)
-    for key in (CONF_AUTO_OFF, CONF_BASE, CONF_MIN, CONF_MAX, CONF_FALLBACK, CONF_CACHE):
+    for key in (CONF_AUTO_OFF, CONF_BASE, CONF_MIN, CONF_MAX, CONF_AFTER, CONF_FALLBACK, CONF_CACHE):
         data[key] = int(data[key])
     data[CONF_SLOPE] = float(data[CONF_SLOPE])
     if not data.get(CONF_RELAY):

@@ -1,8 +1,10 @@
 # Motorvärmare
 
-Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.7.2, betatest.
+Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.7.3, betatest.
 
 Ersätter beta 0.1.0, som aldrig installerades. Den här versionen är **en** integration. Varje motorvärmaruttag läggs till som en underpost.
+
+**Nytt i 0.7.3:** inställningen **Värme efter avresa** per uttag (0–120 min, standard 60). Värmen fortsätter så länge efter avresetiden, sedan slutar den och avresan försvinner ur listan. Ändras under uttagets inställningar (tre punkter på uttaget → Konfigurera om).
 
 **Nytt i 0.7.2:** knappen **Stoppa uppvärmning nu** på kortet (visas när det finns värmebehov), knappen `button.<uttag>_stoppa_uppvarmning` och tjänsten `motorvarmare.stop_heating`. Pågående kalenderavresor hoppas över (kan återställas), pågående manuella avresor tas bort och forcering avbryts. Kommande avresor påverkas inte. Reläet slås av som ett vanligt frånslag, utan säkerhetsspärr. Att slå av Shelly-reläet direkt ger fortfarande spärr.
 
@@ -47,6 +49,7 @@ Inga YAML-filer behövs.
    - **Shellyns Auto Off:** 240. Ska vara samma värde som du ställer in i Shellyn.
    - **Larm skickas till:** en eller flera telefoner (`notify.mobile_app_…`) som får larm för just detta uttag. Lämna tomt för att använda integrationens gemensamma mottagare.
    - **Uppvärmningskurva:** standardvärdena ger 60 − 3 × temperatur, samma som din nuvarande mallhjälpare, men begränsad till 0–240 min.
+   - **Värme efter avresa:** 60 min (0–120). Så länge fortsätter värmen efter avresetiden; sedan slutar den och avresan försvinner ur listan.
 3. Ändra ett uttag senare via de tre punkterna på uttaget → **Konfigurera om**. Fler uttag läggs till på samma sätt som det första.
 4. **Inställningar** (kugghjulet på integrationen):
    - **Gemensam larmmottagare:** används för uttag som inte har egna larmmottagare. Larm visas alltid även som avisering i Home Assistant.
@@ -113,7 +116,7 @@ I testläge skickas inga kommandon. Ett undantag: om du byter från live- till t
 
 ## 6. Avresor
 
-- Värmebehovet startar vid avresa minus uppvärmningstid och upphör vid avresa + 60 min.
+- Värmebehovet startar vid avresa minus uppvärmningstid och upphör vid avresa + uttagets värme efter avresa (standard 60 min).
 - När värmningen väl har startat avbryts den inte om temperaturen stiger.
 - **Ändra en pågående avresa:** flyttas den så långt fram att starttiden hamnar i framtiden planeras den om och behovet upphör tills dess. Annars fortsätter behovet.
 - **Tid utan tidszon** i tjänsteanrop tolkas som lokal tid.
@@ -158,8 +161,8 @@ I testläge skickas inga kommandon. Ett undantag: om du byter från live- till t
 - Heldagshändelser ignoreras alltid.
 - Kalendern läses var 5:e minut och när kalenderentiteten ändras, två dygn framåt. Tjänsten `motorvarmare.refresh_calendars` läser om direkt.
 - **Vid uppstart** läses kalendrarna först när HA har startat helt. Är kalendern inte klar, till exempel för att Google inte har synkat än, görs nya försök efter 30 s, 1, 2, 4 och sedan var 5:e minut. Under de första 10 minuterna loggas det bara på debug-nivå. Går kalendern fortfarande inte att läsa efter det kommer en varning, en gång per felorsak.
-- En kalenderavresa ligger kvar till 60 min efter avresetiden, precis som en manuell.
-- Överlappande avresor bryter inte varandra: när den första avresans 60 min har gått ut fortsätter en redan startad senare avresa utan avbrott.
+- En kalenderavresa ligger kvar lika länge efter avresetiden som en manuell (uttagets värme efter avresa).
+- Överlappande avresor bryter inte varandra: när den första avresans tid efter avresa har gått ut fortsätter en redan startad senare avresa utan avbrott.
 - Tas händelsen bort ur kalendern innan uppvärmningen har startat försvinner avresan. Har den startat fortsätter den.
 - Går kalendern inte att läsa, t.ex. direkt efter omstart, behålls de avresor som redan finns.
 - En kalenderavresa ändras i kalendern, inte i kortet. I kortet kan den **hoppas över** och **återställas**. Överhoppningen gäller bara det uttaget.

@@ -44,6 +44,7 @@
             "minutes_per_degree": "Extra minutes per degree colder",
             "minimum_minutes": "Shortest heating time",
             "maximum_minutes": "Longest heating time",
+            "after_departure_minutes": "Heating after departure",
             "fallback_minutes": "Fallback time without temperature",
             "temperature_cache_minutes": "Use last valid temperature for",
             "notify_services": "Send alarms to"
@@ -52,6 +53,7 @@
             "relay_entity": "May be left empty in test mode.",
             "live_control": "OFF = test mode: no commands are sent to the relay.",
             "auto_off_minutes": "Same value as set in the Shelly. The integration switches off by itself 5 minutes before.",
+            "after_departure_minutes": "How long the outlet keeps heating after the departure time. When it has passed, heating stops and the departure is removed from the list.",
             "fallback_minutes": "Used when the temperature sensor has not given a valid value during the time below.",
             "notify_services": "One or more phones (notify services) that receive alarms for this outlet. Leave empty to use the integration's common recipient. Alarms always also appear as a Home Assistant notification."
           }
@@ -68,6 +70,7 @@
             "minutes_per_degree": "Extra minutes per degree colder",
             "minimum_minutes": "Shortest heating time",
             "maximum_minutes": "Longest heating time",
+            "after_departure_minutes": "Heating after departure",
             "fallback_minutes": "Fallback time without temperature",
             "temperature_cache_minutes": "Use last valid temperature for",
             "notify_services": "Send alarms to"
@@ -76,6 +79,7 @@
             "relay_entity": "May be left empty in test mode.",
             "live_control": "OFF = test mode: no commands are sent to the relay.",
             "auto_off_minutes": "Same value as set in the Shelly. The integration switches off by itself 5 minutes before.",
+            "after_departure_minutes": "How long the outlet keeps heating after the departure time. When it has passed, heating stops and the departure is removed from the list.",
             "fallback_minutes": "Used when the temperature sensor has not given a valid value during the time below.",
             "notify_services": "One or more phones (notify services) that receive alarms for this outlet. Leave empty to use the integration's common recipient. Alarms always also appear as a Home Assistant notification."
           }

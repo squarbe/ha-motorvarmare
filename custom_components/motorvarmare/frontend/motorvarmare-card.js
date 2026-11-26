@@ -4,7 +4,7 @@
  * type: custom:motorvarmare-card
  * entity: sensor.<uttag>_avresor          -> ett uttag
  */
-const MV_VERSION = "0.7.2";
+const MV_VERSION = "0.7.3";
 
 /** Alla uttagens Avresor-sensorer (de har attributet heater_id och trips), sorterade på namn. */
 function mvHeaterEntities(hass) {

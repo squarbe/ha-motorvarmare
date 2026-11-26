@@ -38,7 +38,7 @@ from .const import (
     PRELIM_REFRESH,
     PRELIM_TEMP_JUMP,
     TEMP_HYSTERESIS,
-    AFTER_DEPARTURE,
+    CONF_AFTER,
     AUTO_OFF_MARGIN,
     CONF_AUTO_OFF,
     CONF_BASE,
@@ -277,14 +277,19 @@ class Heater:
                     "started": bool(trip.get("started")),
                     "start_at": start.isoformat(),
                     "preliminary": preliminary,
-                    "end_at": (dep + AFTER_DEPARTURE).isoformat(),
-                    "active": bool(trip.get("started")) and not skipped and now < dep + AFTER_DEPARTURE,
+                    "end_at": (dep + self.after_departure).isoformat(),
+                    "active": bool(trip.get("started")) and not skipped and now < dep + self.after_departure,
                 }
             )
         return sorted(rows, key=lambda r: r["departure_at"])
 
     def active_trip_count(self) -> int:
         return sum(1 for t in self.state["trips"] if not t.get("skipped"))
+
+    @property
+    def after_departure(self) -> timedelta:
+        """Hur länge behovet (och avresan) finns kvar efter avresetiden."""
+        return timedelta(minutes=self.config[CONF_AFTER])
 
     def next_start(self) -> datetime | None:
         """Publicerad nästa start (räknas fram i _update_need)."""
@@ -378,8 +383,10 @@ class Heater:
         self.next_start_preliminary = True
 
     async def async_add_departure(self, when: datetime, label: str = "") -> str:
-        if when + AFTER_DEPARTURE <= dt_util.utcnow():
-            raise HomeAssistantError("Avresetiden har redan passerat (inklusive 60 min efter avresa)")
+        if when + self.after_departure <= dt_util.utcnow():
+            raise HomeAssistantError(
+                f"Avresetiden har redan passerat (inklusive {self.config[CONF_AFTER]} min efter avresa)"
+            )
         trip_id = uuid.uuid4().hex[:12]
         self.state["trips"].append(
             {"id": trip_id, "departure_at": when.isoformat(), "started": False, "label": label}
@@ -404,7 +411,7 @@ class Heater:
             )
         if when is not None:
             now = dt_util.utcnow()
-            if when + AFTER_DEPARTURE <= now:
+            if when + self.after_departure <= now:
                 raise HomeAssistantError("Den nya avresetiden har redan passerat")
             trip["departure_at"] = when.isoformat()
             # Flyttas avresan så långt fram att starttiden ligger i framtiden,
@@ -443,13 +450,13 @@ class Heater:
         """Ersätt avresorna från en kalenderkoppling med aktuellt läsresultat.
 
         departures: [{"id", "departure_at" (datetime, UTC), "label"}]
-        - Nya avresor läggs till (om avresa + 60 min inte har passerat).
+        - Nya avresor läggs till (om avresa + tiden efter avresa inte har passerat).
         - Avresor som inte längre finns i kalendern tas bort, utom när
-          uppvärmningen redan har startat: de ligger kvar till avresa + 60 min.
+          uppvärmningen redan har startat: de ligger kvar till avresa + tiden efter avresa.
         - Överhoppning och startstatus behålls för avresor som finns kvar.
         """
         now = dt_util.utcnow()
-        wanted = {d["id"]: d for d in departures if d["departure_at"] + AFTER_DEPARTURE > now}
+        wanted = {d["id"]: d for d in departures if d["departure_at"] + self.after_departure > now}
         changed = False
         kept: list[dict[str, Any]] = []
         for trip in self.state["trips"]:
@@ -567,7 +574,7 @@ class Heater:
         active = False
         for trip in self.state["trips"]:
             dep = _dt(trip["departure_at"])
-            if dep is None or now >= dep + AFTER_DEPARTURE:
+            if dep is None or now >= dep + self.after_departure:
                 changed = True
                 continue
             if trip.get("skipped"):

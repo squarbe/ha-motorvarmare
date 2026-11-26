@@ -1302,3 +1302,66 @@ async def test_stop_heating_while_inhibited_after_ack(hass, make, freezer):
     await env.call("stop_heating")
     assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "off"
     assert env.s("sensor.motorvarmare_1_status").state == "Viloläge"
+
+
+# ---------------- 0.7.3: värme efter avresa per uttag ----------------
+
+async def test_after_departure_30_min_need_and_trip_end(hass, make, freezer):
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, after_departure_minutes=30)])
+    dep = dt_util.now() + timedelta(minutes=20)  # 0 °C -> 60 min: startar direkt
+    await env.call("add_departure", departure_at=dep.isoformat())
+    await env.relay("on")
+    trip = env.s("sensor.motorvarmare_1_avresor").attributes["trips"][0]
+    assert dt_util.parse_datetime(trip["end_at"]) == dt_util.parse_datetime(trip["departure_at"]) + timedelta(minutes=30)
+    await env.tick(freezer, timedelta(minutes=20 + 29))
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+    await env.tick(freezer, timedelta(minutes=1, seconds=15))
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "off"
+    assert len(env.off) == 1
+    assert env.s("sensor.motorvarmare_1_avresor").state == "0"
+    assert env.s("sensor.motorvarmare_1_avresor").attributes["trips"] == []
+
+
+async def test_after_departure_zero_stops_at_departure(hass, make, freezer):
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False, after_departure_minutes=0)])
+    await env.call("add_departure", departure_at=(dt_util.now() + timedelta(minutes=10)).isoformat())
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+    await env.tick(freezer, timedelta(minutes=10, seconds=15))
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "off"
+    with pytest.raises(HomeAssistantError):
+        await env.call("add_departure", departure_at=(dt_util.now() - timedelta(minutes=1)).isoformat())
+
+
+async def test_after_departure_default_60_for_existing_heater(hass, make):
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False)])
+    await env.call("add_departure", departure_at=(dt_util.now() - timedelta(minutes=59)).isoformat())
+    trip = env.s("sensor.motorvarmare_1_avresor").attributes["trips"][0]
+    assert dt_util.parse_datetime(trip["end_at"]) - dt_util.parse_datetime(trip["departure_at"]) == timedelta(minutes=60)
+
+
+async def test_after_departure_shorter_overlap_still_continues(hass, make, freezer):
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, live=False, after_departure_minutes=30)])
+    now = dt_util.now()
+    await env.call("add_departure", departure_at=(now + timedelta(minutes=10)).isoformat())
+    await env.call("add_departure", departure_at=(now + timedelta(minutes=50)).isoformat())
+    await env.tick(freezer, timedelta(minutes=41))  # första: 10+30 passerad, andra startad
+    attrs = env.s("sensor.motorvarmare_1_avresor").attributes
+    assert len(attrs["trips"]) == 1 and attrs["trips"][0]["started"]
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+
+
+async def test_after_departure_in_subentry_flow(hass, make):
+    env = await make(subs=[])
+    r = await hass.config_entries.subentries.async_init((env.entry.entry_id, "uttag"), context={"source": "user"})
+    assert "after_departure_minutes" in {str(k) for k in r["data_schema"].schema}
+    base = {"name": "Motorvärmare 1", "temperature_entity": TEMP, "relay_entity": RELAY, "live_control": False,
+            "auto_off_minutes": 240, "base_minutes": 60, "minutes_per_degree": 3, "minimum_minutes": 0,
+            "maximum_minutes": 240, "after_departure_minutes": 60, "fallback_minutes": 180,
+            "temperature_cache_minutes": 30}
+    r = await hass.config_entries.subentries.async_configure(r["flow_id"], base)
+    assert r["type"] is FlowResultType.CREATE_ENTRY
+    sub_obj = next(iter(env.entry.subentries.values()))
+    r = await env.entry.start_subentry_reconfigure_flow(hass, sub_obj.subentry_id)
+    r = await hass.config_entries.subentries.async_configure(r["flow_id"], {**base, "after_departure_minutes": 30.0})
+    assert r["type"] is FlowResultType.ABORT
+    assert env.entry.subentries[sub_obj.subentry_id].data["after_departure_minutes"] == 30
