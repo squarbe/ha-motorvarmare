@@ -1,8 +1,10 @@
 # Motorvärmare
 
-Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.7.3, betatest.
+Egen Home Assistant-integration för motorvärmare: avresor, temperaturberoende uppvärmningstid och säker styrning av Shelly-reläer. Version 0.8.0, betatest.
 
 Ersätter beta 0.1.0, som aldrig installerades. Den här versionen är **en** integration. Varje motorvärmaruttag läggs till som en underpost.
+
+**Nytt i 0.8.0:** **Stoppa när sladden dras ur** per uttag (standard på). Har uttaget dragit ström och effekten sedan ligger under 50 W i 1 minut i sträck avslutas värmningen, precis som med knappen Stoppa uppvärmning nu. Sätter du i sladden igen värms det inte. Drar uttaget ingen ström alls 2 minuter efter tillslag får du en avisering om att bilen inte verkar vara inkopplad, men värmningen fortsätter.
 
 **Nytt i 0.7.3:** inställningen **Värme efter avresa** per uttag (0–120 min, standard 60). Värmen fortsätter så länge efter avresetiden, sedan slutar den och avresan försvinner ur listan. Ändras under uttagets inställningar (tre punkter på uttaget → Konfigurera om).
 
@@ -50,6 +52,7 @@ Inga YAML-filer behövs.
    - **Larm skickas till:** en eller flera telefoner (`notify.mobile_app_…`) som får larm för just detta uttag. Lämna tomt för att använda integrationens gemensamma mottagare.
    - **Uppvärmningskurva:** standardvärdena ger 60 − 3 × temperatur, samma som din nuvarande mallhjälpare, men begränsad till 0–240 min.
    - **Värme efter avresa:** 60 min (0–120). Så länge fortsätter värmen efter avresetiden; sedan slutar den och avresan försvinner ur listan.
+   - **Stoppa när sladden dras ur:** PÅ. Kräver en effektsensor på reläets enhet (hämtas automatiskt). Stäng av om motorvärmaren har egen termostat som slår av när motorn är varm.
 3. Ändra ett uttag senare via de tre punkterna på uttaget → **Konfigurera om**. Fler uttag läggs till på samma sätt som det första.
 4. **Inställningar** (kugghjulet på integrationen):
    - **Gemensam larmmottagare:** används för uttag som inte har egna larmmottagare. Larm visas alltid även som avisering i Home Assistant.
@@ -121,6 +124,14 @@ I testläge skickas inga kommandon. Ett undantag: om du byter från live- till t
 - **Ändra en pågående avresa:** flyttas den så långt fram att starttiden hamnar i framtiden planeras den om och behovet upphör tills dess. Annars fortsätter behovet.
 - **Tid utan tidszon** i tjänsteanrop tolkas som lokal tid.
 
+### Urdragen sladd (live-läge)
+
+- Gäller hela värmningen, även före avresetiden.
+- Villkor: reläet är på, uttaget har dragit minst 50 W under denna tillslagsperiod, och effekten ligger sedan under 50 W i 1 minut i sträck. Ett kort glapp stoppar alltså inte.
+- Värmningen avslutas som med Stoppa uppvärmning nu: pågående manuella avresor tas bort, pågående kalenderavresor hoppas över och forcering avbryts. Kommande avresor påverkas inte. Ingen avisering, ingen spärr. Statusen visar "Stoppad – sladden urdragen HH:MM" i en timme.
+- Otillgänglig effektsensor räknas inte som 0 W.
+- Ingen effekt alls 2 minuter efter tillslag: statusen blir "Värmer – ingen effekt (bilen inte inkopplad?)" och en avisering skickas till uttagets mottagare en gång. Värmningen fortsätter. Aviseringen tas bort när effekten kommer.
+
 ### Beräkning och visning av starttid
 
 - **Hysteres:** uppvärmningstiden räknas om först när utetemperaturen har ändrats minst 0,5 °C sedan förra beräkningen. Med 3 min/°C motsvarar det 1,5 min. Normal pendling i givaren ger alltså inga nya värden.
@@ -169,7 +180,7 @@ I testläge skickas inga kommandon. Ett undantag: om du byter från live- till t
 - Ändras händelsens tid eller titel räknas den som en ny avresa. En tidigare överhoppning gäller då inte längre.
 - Sensorn Avresor räknar inte överhoppade avresor.
 
-## 8. Inte med i 0.7
+## 8. Inte med i 0.8
 
 - Historik över borttagna avresor
 

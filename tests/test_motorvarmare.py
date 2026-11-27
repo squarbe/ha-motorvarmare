@@ -1365,3 +1365,128 @@ async def test_after_departure_in_subentry_flow(hass, make):
     r = await hass.config_entries.subentries.async_configure(r["flow_id"], {**base, "after_departure_minutes": 30.0})
     assert r["type"] is FlowResultType.ABORT
     assert env.entry.subentries[sub_obj.subentry_id].data["after_departure_minutes"] == 30
+
+
+# ---------------- 0.8: urdragen sladd ----------------
+
+POWER = "sensor.mv1_power"
+
+
+def register_power(hass):
+    from homeassistant.helpers import device_registry as dr, entity_registry as er
+    shelly = MockConfigEntry(domain="shelly", title="Shelly")
+    shelly.add_to_hass(hass)
+    dev = dr.async_get(hass).async_get_or_create(
+        config_entry_id=shelly.entry_id, identifiers={("shelly", "mv1")}, name="Motorvärmare 1")
+    reg = er.async_get(hass)
+    reg.async_get_or_create("switch", "shelly", "mv1-relay", suggested_object_id="mv1",
+                            device_id=dev.id, config_entry=shelly)
+    reg.async_get_or_create("sensor", "shelly", "mv1-power", suggested_object_id="mv1_power",
+                            device_id=dev.id, config_entry=shelly, original_device_class="power")
+    hass.states.async_set(POWER, "0.0")
+
+
+async def power(env, watt):
+    env.hass.states.async_set(POWER, str(watt))
+    await env.hass.async_block_till_done()
+
+
+async def heating_env(hass, make, **extra):
+    register_power(hass)
+    env = await make(subs=[sub(SID, "Motorvärmare 1", RELAY, **extra)])
+    await env.call("add_departure", departure_at=(dt_util.now() + timedelta(minutes=20)).isoformat())
+    await env.relay("on")
+    return env
+
+
+def attrs(env):
+    return env.s("sensor.motorvarmare_1_avresor").attributes
+
+
+async def test_power_entity_found_from_relay_device(hass, make):
+    env = await heating_env(hass, make)
+    assert attrs(env)["power_entity"] == POWER
+
+
+async def test_unplug_stops_heating_after_1_min(hass, make, freezer):
+    env = await heating_env(hass, make)
+    await power(env, 1700)
+    await env.tick(freezer, timedelta(minutes=5))
+    await power(env, 0)
+    await env.tick(freezer, timedelta(seconds=45))
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+    await env.tick(freezer, timedelta(seconds=30))
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "off"
+    assert len(env.off) == 1
+    assert attrs(env)["trips"] == []
+    await env.relay("off")
+    assert attrs(env)["status"].startswith("Stoppad – sladden urdragen")
+    assert not attrs(env)["fault"]
+    # Sätts sladden i igen värms det inte
+    await power(env, 0)
+    await env.tick(freezer, timedelta(minutes=5))
+    assert len(env.on) == 1
+    # Statusen försvinner efter en timme
+    await env.tick(freezer, timedelta(minutes=60))
+    assert attrs(env)["status"] == "Viloläge"
+
+
+async def test_short_glitch_does_not_stop(hass, make, freezer):
+    env = await heating_env(hass, make)
+    await power(env, 1700)
+    await env.tick(freezer, timedelta(minutes=1))
+    await power(env, 0)
+    await env.tick(freezer, timedelta(seconds=30))
+    await power(env, 1700)
+    await env.tick(freezer, timedelta(seconds=45))
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+    assert not env.off
+
+
+async def test_unavailable_power_is_not_zero(hass, make, freezer):
+    env = await heating_env(hass, make)
+    await power(env, 1700)
+    await env.tick(freezer, timedelta(minutes=1))
+    await power(env, "unavailable")
+    await env.tick(freezer, timedelta(minutes=5))
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+    assert not env.off
+
+
+async def test_not_plugged_warns_once_and_keeps_heating(hass, make, freezer):
+    env = await heating_env(hass, make)
+    await env.tick(freezer, timedelta(minutes=1, seconds=45))
+    assert not env.notes
+    await env.tick(freezer, timedelta(seconds=30))
+    assert len(env.notes) == 1 and "inte vara inkopplad" in env.notes[0].data["title"]
+    assert "ingen effekt" in attrs(env)["status"]
+    await env.tick(freezer, timedelta(minutes=5))
+    assert len(env.notes) == 1
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+    # Sladden i -> värmer normalt, senare urdragning stoppar
+    await power(env, 1700)
+    assert attrs(env)["status"] == "Värmer"
+    await power(env, 0)
+    await env.tick(freezer, timedelta(minutes=1, seconds=15))
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "off"
+
+
+async def test_unplug_disabled_setting(hass, make, freezer):
+    env = await heating_env(hass, make, stop_on_unplug=False)
+    await power(env, 1700)
+    await env.tick(freezer, timedelta(minutes=1))
+    await power(env, 0)
+    await env.tick(freezer, timedelta(minutes=5))
+    assert env.s("binary_sensor.motorvarmare_1_varmebehov").state == "on"
+    assert not env.notes
+
+
+async def test_unplug_keeps_future_departures_and_skips_calendar_like_button(hass, make, freezer):
+    env = await heating_env(hass, make)
+    await env.call("add_departure", departure_at=(dt_util.now() + timedelta(hours=10)).isoformat())
+    await power(env, 1700)
+    await env.tick(freezer, timedelta(minutes=1))
+    await power(env, 0)
+    await env.tick(freezer, timedelta(minutes=1, seconds=15))
+    trips = attrs(env)["trips"]
+    assert len(trips) == 1 and not trips[0]["started"]

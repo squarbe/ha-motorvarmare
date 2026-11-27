@@ -20,6 +20,7 @@ CONF_MIN = "minimum_minutes"
 CONF_MAX = "maximum_minutes"
 CONF_FALLBACK = "fallback_minutes"
 CONF_CACHE = "temperature_cache_minutes"
+CONF_UNPLUG = "stop_on_unplug"  # stoppa värmningen när effekten försvinner (sladden urdragen)
 CONF_AFTER = "after_departure_minutes"  # värmen fortsätter (och avresan ligger kvar) så här länge efter avresa
 CONF_HEATER_NOTIFY = "notify_services"  # larmmottagare för just detta uttag; tom = integrationens gemensamma
 
@@ -33,6 +34,7 @@ DEFAULTS = {
     CONF_FALLBACK: 180,
     CONF_CACHE: 30,
     CONF_AFTER: 60,
+    CONF_UNPLUG: True,
 }
 
 # Konfiguration per kalenderkoppling (subentry data)
@@ -72,6 +74,12 @@ RELAY_CONFIRM = timedelta(seconds=30)  # tid för relä att bekräfta PÅ, och s
 UNAVAILABLE_WARN = timedelta(minutes=2)  # relä otillgängligt under behov -> varning
 AUTO_OFF_MARGIN = timedelta(minutes=5)  # integrationen slår själv av så här länge före Shellyns Auto Off
 TICK = timedelta(seconds=15)
+
+# Urdragen sladd (0.8)
+PLUGGED_W = 50.0  # effekt (W) över detta = bilen inkopplad
+UNPLUG_DELAY = timedelta(minutes=1)  # effekt under gränsen så här länge i sträck = sladden urdragen
+NOT_PLUGGED_WARN = timedelta(minutes=2)  # ingen effekt alls så här länge efter tillslag -> avisering
+UNPLUG_SHOW = timedelta(minutes=60)  # så länge visas "Stoppad – sladden urdragen" i status
 
 # Beräkning av uppvärmningstid och starttid (0.7)
 TEMP_HYSTERESIS = 0.5  # °C: uppvärmningstiden räknas om först när temperaturen ändrats minst så mycket

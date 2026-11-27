@@ -21,6 +21,7 @@ from .const import (
     CALENDAR_SUBENTRY_TYPE,
     CONF_ALLOWED_CALENDARS,
     CONF_AFTER,
+    CONF_UNPLUG,
     CONF_AUTO_OFF,
     CONF_CALENDAR,
     CONF_END_DIRECTION,
@@ -91,6 +92,7 @@ def _heater_schema(defaults: dict[str, Any], notify_services: list[str]) -> vol.
             vol.Required(CONF_MIN, default=d[CONF_MIN]): _num(0, 360),
             vol.Required(CONF_MAX, default=d[CONF_MAX]): _num(0, 360),
             vol.Required(CONF_AFTER, default=d[CONF_AFTER]): _num(0, 120),
+            vol.Required(CONF_UNPLUG, default=d[CONF_UNPLUG]): bool,
             vol.Required(CONF_FALLBACK, default=d[CONF_FALLBACK]): _num(0, 360),
             vol.Required(CONF_CACHE, default=d[CONF_CACHE]): _num(0, 1440),
             vol.Optional(CONF_HEATER_NOTIFY, default=current): selector.SelectSelector(

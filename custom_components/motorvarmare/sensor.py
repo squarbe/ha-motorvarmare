@@ -54,7 +54,7 @@ class DeparturesSensor(HeaterEntity, SensorEntity):
             "trips", "heater_id", "test_mode", "status", "need", "fault", "fault_reason",
             "fault_at", "inhibited", "inhibit_reason", "heating_minutes", "temperature",
             "temperature_source", "next_start", "next_start_preliminary", "force_until",
-            "relay_entity",
+            "relay_entity", "power_entity",
         }
     )
 

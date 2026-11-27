@@ -26,6 +26,7 @@ import uuid
 
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import (
     async_track_state_change_event,
     async_track_time_interval,
@@ -39,6 +40,11 @@ from .const import (
     PRELIM_TEMP_JUMP,
     TEMP_HYSTERESIS,
     CONF_AFTER,
+    CONF_UNPLUG,
+    NOT_PLUGGED_WARN,
+    PLUGGED_W,
+    UNPLUG_DELAY,
+    UNPLUG_SHOW,
     AUTO_OFF_MARGIN,
     CONF_AUTO_OFF,
     CONF_BASE,
@@ -90,6 +96,7 @@ def empty_state() -> dict[str, Any]:
         "force_until": None,
         "last_temperature": None,
         "last_temperature_at": None,
+        "unplugged_at": None,  # när värmningen senast stoppades av urdragen sladd
         "relay": {
             "commanded": None,  # None | "on" | "off"
             "commanded_at": None,
@@ -141,6 +148,11 @@ class Heater:
         self._unavailable_since: datetime | None = None
         self._unavailable_warned = False
         self._off_retry_done = False
+        self.power_entity: str | None = None  # effektsensor på reläets enhet (sätts vid start)
+        self._plugged_seen = False  # effekt har uppmätts under denna tillslagsperiod
+        self._low_since: datetime | None = None
+        self._not_plugged_warned = False
+        self._no_power = False  # för status: reläet på men ingen effekt
         # Visningsvärden
         self.need = False
         self.heating_minutes = 0  # publicerad (med hysteres)
@@ -182,10 +194,26 @@ class Heater:
         )
 
     # ---------- livscykel ----------
+    def _find_power_entity(self) -> str | None:
+        """Effektsensorn på samma enhet som reläet (device_class power)."""
+        if not self.relay_entity:
+            return None
+        reg = er.async_get(self.hass)
+        relay = reg.async_get(self.relay_entity)
+        if relay is None or relay.device_id is None:
+            return None
+        for entry in er.async_entries_for_device(reg, relay.device_id):
+            if entry.domain == "sensor" and (entry.device_class or entry.original_device_class) == "power":
+                return entry.entity_id
+        return None
+
     async def async_start(self) -> None:
+        self.power_entity = self._find_power_entity()
         entities = [self.config[CONF_TEMPERATURE]]
         if self.relay_entity:
             entities.append(self.relay_entity)
+        if self.power_entity:
+            entities.append(self.power_entity)
         self._unsubs.append(
             async_track_state_change_event(self.hass, entities, self._on_state_event)
         )
@@ -524,6 +552,10 @@ class Heater:
         avresor tas bort och en forcering avbryts. Avresor som ännu inte startat
         påverkas inte. Reläet slås av som ett vanligt, beordrat frånslag (ingen spärr).
         """
+        self._stop_heating_state()
+        await self.async_reconcile()
+
+    def _stop_heating_state(self) -> None:
         kept = []
         for trip in self.state["trips"]:
             if trip.get("started") and not trip.get("skipped"):
@@ -535,7 +567,6 @@ class Heater:
         self.state["trips"] = kept
         self.state["force_until"] = None
         self._save()
-        await self.async_reconcile()
 
     async def async_acknowledge(self) -> None:
         relay = self.relay
@@ -673,11 +704,20 @@ class Heater:
         if relay["fault"]:
             self.status = "Säkerhetsspärr"
         elif relay["commanded"] == "on":
-            self.status = "Värmer" if relay["confirmed"] else "Väntar på att reläet slår till"
+            if not relay["confirmed"]:
+                self.status = "Väntar på att reläet slår till"
+            elif self._no_power:
+                self.status = "Värmer – ingen effekt (bilen inte inkopplad?)"
+            else:
+                self.status = "Värmer"
         elif self.need and relay["inhibited"]:
             self.status = relay["inhibit_reason"] or "Spärrad för denna behovsperiod"
         else:
-            self.status = "Viloläge"
+            unplugged = _dt(self.state.get("unplugged_at"))
+            if unplugged is not None and now - unplugged < UNPLUG_SHOW:
+                self.status = f"Stoppad – sladden urdragen {dt_util.as_local(unplugged):%H:%M}"
+            else:
+                self.status = "Viloläge"
 
     async def _handle_commanded_on(self, now: datetime, observed: str) -> None:
         relay = self.relay
@@ -687,6 +727,8 @@ class Heater:
             if not relay["confirmed"]:
                 relay["confirmed"] = True
                 self._save()
+            if self.need and self._check_unplugged(now, on_at):
+                return
             if now - on_at >= self.max_on:
                 relay["inhibited"] = self.need
                 relay["inhibit_reason"] = "Maxtid nådd (före Shellyns Auto Off)" if self.need else None
@@ -749,6 +791,62 @@ class Heater:
                     "Reläet är fortfarande på efter avslagskommando. Ett nytt försök har gjorts; kontrollera uttaget.",
                 )
 
+    def _read_power(self) -> float | None:
+        if not self.power_entity:
+            return None
+        state = self.hass.states.get(self.power_entity)
+        try:
+            value = float(state.state)  # type: ignore[union-attr]
+        except (AttributeError, TypeError, ValueError):
+            return None  # otillgänglig/okänd räknas inte som 0 W
+        return value if math.isfinite(value) else None
+
+    def _reset_power_watch(self) -> None:
+        self._plugged_seen = False
+        self._low_since = None
+        self._no_power = False
+        if self._not_plugged_warned:
+            self._not_plugged_warned = False
+            self._dismiss(f"motorvarmare_{self.heater_id}_ej_inkopplad")
+
+    def _check_unplugged(self, now: datetime, on_at: datetime) -> bool:
+        """Reläet är på under behov. Returnerar True om värmningen stoppades (sladden urdragen)."""
+        if not self.config.get(CONF_UNPLUG, True) or not self.power_entity:
+            return False
+        power = self._read_power()
+        if power is None:
+            return False
+        if power >= PLUGGED_W:
+            self._low_since = None
+            self._no_power = False
+            if not self._plugged_seen:
+                self._plugged_seen = True
+                if self._not_plugged_warned:
+                    self._not_plugged_warned = False
+                    self._dismiss(f"motorvarmare_{self.heater_id}_ej_inkopplad")
+            return False
+        if self._low_since is None:
+            self._low_since = now
+        if self._plugged_seen:
+            if now - self._low_since < UNPLUG_DELAY:
+                return False
+            _LOGGER.info("%s: effekten försvann – sladden urdragen, värmningen stoppas", self.name)
+            self._stop_heating_state()
+            self.state["unplugged_at"] = self._low_since.isoformat()
+            self._save()
+            self._pending = True  # räkna om behovet direkt (reläet slås av i nästa varv)
+            return True
+        self._no_power = now - on_at >= NOT_PLUGGED_WARN
+        if self._no_power and not self._not_plugged_warned:
+            self._not_plugged_warned = True
+            self._notify(
+                f"motorvarmare_{self.heater_id}_ej_inkopplad",
+                f"{self.name}: bilen verkar inte vara inkopplad",
+                "Uttaget har varit på i 2 minuter utan att dra ström. Värmningen fortsätter, "
+                "så den kommer igång om du sätter i sladden.",
+            )
+        return False
+
     def _set_fault(self, now: datetime, reason: str) -> None:
         relay = self.relay
         relay["fault"] = True
@@ -768,9 +866,11 @@ class Heater:
         # Avsikten sparas före kommandot (omstart mitt i ett kommando ska tolkas säkert).
         relay["commanded"] = action
         relay["commanded_at"] = now.isoformat()
+        self._reset_power_watch()
         if action == "on":
             relay["on_at"] = now.isoformat()
             relay["confirmed"] = False
+            self.state["unplugged_at"] = None
         elif not retry:
             self._off_retry_done = False
         self._save()
@@ -804,4 +904,5 @@ class Heater:
             "force_until": self.state.get("force_until"),
             "trips": self.trip_view(),
             "relay_entity": self.relay_entity,
+            "power_entity": self.power_entity,
         }
